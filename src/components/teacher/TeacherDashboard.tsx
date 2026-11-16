@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
 import { Assignment, Submission, Section, SemesterNumber, TestCase, RubricCriterion, GradingMode } from '@/types';
 import {
@@ -9,6 +10,7 @@ import {
   Clock,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   FileCode2,
   Users2,
   Sparkles,
@@ -29,9 +31,11 @@ interface TeacherDashboardProps {
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }) => {
   const { currentUser, users } = useAuth();
+  const { showSuccess, showError } = useToast();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [showWizard, setShowWizard] = useState(false);
+  const [wizardError, setWizardError] = useState<string | null>(null);
   const [activeAssignmentForReview, setActiveAssignmentForReview] = useState<Assignment | null>(null);
 
   // --- Wizard Form State (4 Steps) ---
@@ -136,7 +140,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   // Complete Wizard & Publish
   const handlePublishAssignment = () => {
     if (!title.trim() || !description.trim()) {
-      alert('Please provide a title and assignment description.');
+      setWizardError('Please provide an assignment title and detailed instructions/description.');
       return;
     }
 
@@ -165,9 +169,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
     setAssignments(dataStore.getAssignments());
     setShowWizard(false);
     setWizardStep(1);
+    setWizardError(null);
     setTitle('');
     setDescription('');
-    alert(`Assignment published! It is now immediately live for all students in Semester ${targetSemester} (${targetSections.join(', ')}).`);
+    showSuccess(
+      'Assignment Published',
+      `"${newAssignment.title}" is now immediately live for students in Semester ${targetSemester} (${targetSections.join(', ')}).`
+    );
   };
 
   // Filter assignments created by this teacher or in their taught subject / assigned courses
@@ -364,6 +372,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                 />
               ))}
             </div>
+
+            {/* Professional Inline Validation Message Box */}
+            {wizardError && (
+              <div className="p-3.5 mb-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2.5 animate-in fade-in">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                  <span>{wizardError}</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWizardError(null)}
+                  className="text-rose-400 hover:text-rose-700 font-bold p-1"
+                  title="Dismiss message"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* --- STEP 1: Course & Semester --- */}
             {wizardStep === 1 && (

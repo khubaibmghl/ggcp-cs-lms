@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
+import { ToastProvider } from '@/context/ToastContext';
 
 export const metadata: Metadata = {
   title: 'GGC Pasrur — BS Computer Science Assignment Management System',
@@ -24,7 +25,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen bg-slate-50 text-slate-900 antialiased selection:bg-purple-200 selection:text-purple-900">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </AuthProvider>
       </body>
     </html>
   );

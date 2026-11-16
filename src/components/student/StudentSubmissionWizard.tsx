@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
 import { generateIntegrityReport } from '@/lib/integrityEngine';
 import { Assignment, Submission, UploadedFile, SubmissionTelemetry } from '@/types';
@@ -10,6 +11,7 @@ import {
   UploadCloud,
   CheckCircle2,
   AlertTriangle,
+  AlertCircle,
   Code2,
   Image as ImageIcon,
   Clock,
@@ -32,7 +34,9 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
   onClose,
 }) => {
   const { currentUser } = useAuth();
+  const { showSuccess, showError, showWarning, showInfo } = useToast();
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   // Existing submission check (for editing/resubmitting)
   const existingSub = dataStore
@@ -132,12 +136,14 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
 
     Array.from(files).forEach((file) => {
       if (file.size > 10 * 1024 * 1024) {
-        alert(`File ${file.name} exceeds the 10 MB size limit.`);
+        setSubmissionError(`File "${file.name}" exceeds the 10 MB size limit.`);
+        showError('File Too Large', `File "${file.name}" exceeds the 10 MB limit.`);
         return;
       }
       totalSize += file.size;
       if (totalSize > 10 * 1024 * 1024) {
-        alert('Total uploaded size exceeds 10 MB limit.');
+        setSubmissionError('Total uploaded file size exceeds 10 MB limit.');
+        showError('Size Limit Exceeded', 'Total upload size exceeds 10 MB limit.');
         return;
       }
 
@@ -151,6 +157,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
         });
         if (newFiles.length === files.length) {
           setUploadedFiles((prev) => [...prev, ...newFiles]);
+          setSubmissionError(null);
         }
       };
       reader.readAsDataURL(file);
@@ -164,7 +171,8 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
   // Submit Assignment Handler
   const handleSubmit = () => {
     if (!textSolution.trim() && uploadedFiles.length === 0) {
-      alert('Please enter your code/text solution or upload solution files/handwritten images.');
+      setSubmissionError('Please enter your code/text solution or upload solution files/handwritten images before submitting.');
+      showWarning('Incomplete Submission', 'Please provide your solution before submitting.');
       return;
     }
 
@@ -218,7 +226,10 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
       // fallback
     }
 
-    alert('Assignment successfully submitted! You can resubmit anytime before midnight.');
+    showSuccess(
+      'Assignment Submitted',
+      'Your work has been saved successfully! You can resubmit anytime before midnight.'
+    );
     onClose();
   };
 
@@ -256,7 +267,24 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
         </div>
 
         {/* Modal Scrollable Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+        <div className="p-6 overflow-y-auto flex-1 space-y-4">
+          {/* Professional Inline Validation Alert Label */}
+          {submissionError && (
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2.5 animate-in fade-in">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                <span>{submissionError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSubmissionError(null)}
+                className="text-rose-400 hover:text-rose-700 font-bold p-1"
+                title="Dismiss message"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           {/* --- STEP 1: Assignment Brief & Starter File --- */}
           {step === 1 && (
             <div className="space-y-4">
@@ -284,7 +312,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(assignment.resourceFileContent || '');
-                        alert('Starter template copied to clipboard!');
+                        showInfo('Copied to Clipboard', 'Starter code template copied.');
                       }}
                       className="text-purple-700 hover:underline font-bold flex items-center gap-1"
                     >
@@ -528,9 +556,10 @@ int main() {
               type="button"
               onClick={() => {
                 if (step === 2 && !textSolution.trim() && uploadedFiles.length === 0) {
-                  alert('Please enter your solution or upload a file before continuing.');
+                  setSubmissionError('Please enter your solution or upload a file before continuing to the review step.');
                   return;
                 }
+                setSubmissionError(null);
                 setStep((prev) => (prev + 1) as any);
               }}
               className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-md shadow-purple-900/20"

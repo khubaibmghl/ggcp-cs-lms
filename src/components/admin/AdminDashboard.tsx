@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
 import { Subject, SemesterNumber, User, Section, TeacherCourseAssignment } from '@/types';
 import {
@@ -31,6 +32,7 @@ interface AdminDashboardProps {
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) => {
   const { users, approveTeacher, rejectTeacher, createTeacherByAdmin, refreshUsers } = useAuth();
+  const { showSuccess, showError, showWarning, confirmDialog } = useToast();
   const [subjects, setSubjects] = useState<Subject[]>(dataStore.getSubjects());
   const [selectedSemester, setSelectedSemester] = useState<SemesterNumber>(1);
   const [showAddSubjectModal, setShowAddSubjectModal] = useState(false);
@@ -51,6 +53,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
   const [tPassword, setTPassword] = useState('teacher123');
   const [tMatrixSemester, setTMatrixSemester] = useState<SemesterNumber>(1);
   const [assignedCoursesState, setAssignedCoursesState] = useState<TeacherCourseAssignment[]>([]);
+  const [teacherFormError, setTeacherFormError] = useState<string | null>(null);
 
   const pendingTeachers = users.filter((u) => u.role === 'teacher' && u.status === 'pending');
   const approvedTeachers = users.filter((u) => u.role === 'teacher' && u.status === 'approved');
@@ -72,16 +75,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
     dataStore.addSubject(subject);
     setSubjects(dataStore.getSubjects());
     setShowAddSubjectModal(false);
+    showSuccess('Subject Added', `${subject.code} - ${subject.name} added to the curriculum catalog.`);
     setNewCode('');
     setNewName('');
     setNewDescription('');
   };
 
-  const handleDeleteSubject = (id: string) => {
-    if (confirm('Are you sure you want to delete this subject from the official curriculum?')) {
-      dataStore.deleteSubject(id);
-      setSubjects(dataStore.getSubjects());
-    }
+  const handleDeleteSubject = (subject: Subject) => {
+    confirmDialog({
+      title: 'Delete Official Subject?',
+      message: `Are you sure you want to remove "${subject.code} - ${subject.name}" from the official curriculum?`,
+      confirmText: 'Delete Subject',
+      isDanger: true,
+      onConfirm: () => {
+        dataStore.deleteSubject(subject.id);
+        setSubjects(dataStore.getSubjects());
+        showSuccess('Subject Removed', `${subject.code} has been deleted from the curriculum.`);
+      },
+    });
   };
 
   // --- Step 2 Matrix Helper Functions ---
@@ -171,9 +182,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
   const handleStep1Next = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tName.trim() || !tPhone.trim() || !tPassword.trim()) {
-      alert('Please fill in teacher full name, phone number, and password.');
+      setTeacherFormError('Please enter teacher full name, phone number (used for login), and initial password.');
       return;
     }
+    setTeacherFormError(null);
     setTeacherWizardStep(2);
   };
 
@@ -181,7 +193,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
   const handleCreateTeacher = (e: React.FormEvent) => {
     e.preventDefault();
     if (assignedCoursesState.length === 0) {
-      alert('Please assign at least one subject and section (A1, A2, or B) to this teacher.');
+      setTeacherFormError('Please assign at least one subject and section (A1, A2, or B) to this faculty member.');
       return;
     }
 
@@ -197,12 +209,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
       .map((c) => `${c.subjectCode} (${c.sections.join(', ')})`)
       .join(', ');
 
-    alert(
-      `Teacher account created successfully!\n\nFaculty: ${tName}\nUser ID (Phone): ${tPhone}\nPassword: ${tPassword}\nAssigned Courses: ${summary}`
+    showSuccess(
+      'Faculty Account Created',
+      `${tName} registered with Phone User ID: ${tPhone}. Allocated: ${summary}`
     );
 
     setShowAddTeacherModal(false);
     setTeacherWizardStep(1);
+    setTeacherFormError(null);
     setTName('');
     setTPhone('');
     setTEmail('');
@@ -212,6 +226,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
 
   const openTeacherModal = () => {
     setTeacherWizardStep(1);
+    setTeacherFormError(null);
     setTName('');
     setTPhone('');
     setTEmail('');
@@ -443,7 +458,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
                 <div className="mt-4 pt-3 border-t border-slate-200/80 flex items-center justify-between text-[11px]">
                   <span className="text-slate-400 font-medium">BS CS Semester {subject.semester}</span>
                   <button
-                    onClick={() => handleDeleteSubject(subject.id)}
+                    onClick={() => handleDeleteSubject(subject)}
                     title="Remove subject"
                     className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
                   >
@@ -517,9 +532,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
                   type="button"
                   onClick={() => {
                     if (!tName.trim() || !tPhone.trim() || !tPassword.trim()) {
-                      alert('Please complete Step 1 (Name, Phone, Password) first.');
+                      setTeacherFormError('Please complete Step 1 (Faculty Name, Phone Number, Password) before proceeding to Course Allocation.');
                       return;
                     }
+                    setTeacherFormError(null);
                     setTeacherWizardStep(2);
                   }}
                   className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition ${
@@ -550,7 +566,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
             </div>
 
             {/* Modal Body */}
-            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-4">
+              {/* Professional Inline Validation Message Box */}
+              {teacherFormError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2.5 animate-in fade-in slide-in-from-top-1">
+                  <div className="flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                    <span>{teacherFormError}</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setTeacherFormError(null)}
+                    className="text-rose-400 hover:text-rose-700 font-bold p-1"
+                    title="Dismiss message"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               {/* === STEP 1: PERSONAL DETAILS === */}
               {teacherWizardStep === 1 && (
                 <form id="teacher-step-1" onSubmit={handleStep1Next} className="space-y-4">
@@ -563,7 +597,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
                       required
                       placeholder="e.g. Dr. Muhammad Usman"
                       value={tName}
-                      onChange={(e) => setTName(e.target.value)}
+                      onChange={(e) => {
+                        setTName(e.target.value);
+                        if (teacherFormError) setTeacherFormError(null);
+                      }}
                       className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                     />
                   </div>
@@ -579,7 +616,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
                         required
                         placeholder="e.g. 03001234567"
                         value={tPhone}
-                        onChange={(e) => setTPhone(e.target.value)}
+                        onChange={(e) => {
+                          setTPhone(e.target.value);
+                          if (teacherFormError) setTeacherFormError(null);
+                        }}
                         className="w-full text-xs font-mono font-bold pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                       />
                     </div>
@@ -612,7 +652,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
                         required
                         placeholder="e.g. teacher123"
                         value={tPassword}
-                        onChange={(e) => setTPassword(e.target.value)}
+                        onChange={(e) => {
+                          setTPassword(e.target.value);
+                          if (teacherFormError) setTeacherFormError(null);
+                        }}
                         className="w-full text-xs font-medium pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                       />
                     </div>
