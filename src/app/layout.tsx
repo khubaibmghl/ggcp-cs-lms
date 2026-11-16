@@ -3,9 +3,9 @@ import './globals.css';
 import { AuthProvider } from '@/context/AuthContext';
 
 export const metadata: Metadata = {
-  title: 'Apex LMS — BS Computer Science Assignment Management System',
+  title: 'GGC Pasrur — BS Computer Science Assignment Management System',
   description:
-    'Free-tier deployment assignment management system for BS Computer Science students with AI detection, plagiarism checking, input telemetry, and midnight deadline lockout.',
+    'Govt. Graduate College Pasrur (GGC Pasrur) Student Assignment Management System for BS Computer Science classes.',
 };
 
 export default function RootLayout({

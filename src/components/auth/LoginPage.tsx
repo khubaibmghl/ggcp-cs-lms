@@ -2,242 +2,406 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { StudentRegisterModal } from './StudentRegisterModal';
+import { SemesterNumber, Section } from '@/types';
 import {
   GraduationCap,
   Lock,
   User,
-  Phone,
-  ShieldCheck,
-  Award,
-  BookOpen,
-  ArrowRight,
   AlertCircle,
-  HelpCircle,
-  Sparkles,
-  ChevronDown,
-  KeyRound,
+  CheckCircle2,
+  Copy,
+  ArrowRight,
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { login } = useAuth();
+  const { login, registerStudent } = useAuth();
+
+  // Mode: 'login' or 'register' (completely separate clean views)
+  const [mode, setMode] = useState<'login' | 'register'>('login');
+
+  // Login State
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isRegisterOpen, setIsRegisterOpen] = useState(false);
-  const [showDemoAccordion, setShowDemoAccordion] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Register State
+  const [name, setName] = useState('');
+  const [fatherName, setFatherName] = useState('');
+  const [semester, setSemester] = useState<SemesterNumber>(1);
+  const [section, setSection] = useState<Section>('A1');
+  const [rollNumber, setRollNumber] = useState<number>(1);
+  const [regPassword, setRegPassword] = useState('');
+  const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [regError, setRegError] = useState<string | null>(null);
+
+  // Registration Success State
+  const [issuedStudentId, setIssuedStudentId] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  // Handle Login Submit
+  const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setLoginError(null);
 
     if (!identifier.trim() || !password) {
-      setError('Please enter your Login ID / Phone and password.');
+      setLoginError('Please enter your User ID and password.');
       return;
     }
 
     const res = login(identifier.trim(), password);
     if (!res.success) {
-      setError(res.message || 'Login failed. Please check your credentials.');
+      setLoginError(res.message || 'Invalid credentials.');
     }
   };
 
-  const fillDemo = (id: string, pass: string) => {
-    setIdentifier(id);
-    setPassword(pass);
-    setError(null);
+  // Handle Register Submit
+  const handleRegisterSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setRegError(null);
+
+    if (!name.trim() || !fatherName.trim()) {
+      setRegError('Please enter full name and father name.');
+      return;
+    }
+
+    if (regPassword.length < 6) {
+      setRegError('Password must be at least 6 characters.');
+      return;
+    }
+
+    if (regPassword !== regConfirmPassword) {
+      setRegError('Passwords do not match.');
+      return;
+    }
+
+    const result = registerStudent({
+      name: name.trim(),
+      fatherName: fatherName.trim(),
+      semester,
+      section,
+      rollNumber: Number(rollNumber),
+      password: regPassword,
+    });
+
+    setIssuedStudentId(result.generatedLoginId);
+  };
+
+  const handleCopyId = () => {
+    if (issuedStudentId) {
+      navigator.clipboard.writeText(issuedStudentId);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-between relative overflow-hidden selection:bg-purple-500 selection:text-white">
-      {/* Background Decorative Glows */}
-      <div className="absolute top-0 -left-40 w-96 h-96 bg-purple-700/20 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute bottom-0 -right-40 w-96 h-96 bg-indigo-700/20 rounded-full blur-3xl pointer-events-none" />
-
-      {/* Top Header Bar */}
-      <header className="relative z-10 max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-900 flex flex-col justify-between relative overflow-hidden">
+      {/* Top Header */}
+      <header className="relative z-10 max-w-7xl w-full mx-auto px-6 py-6 flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-900/50">
+          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
             <GraduationCap className="w-6 h-6" />
           </div>
           <div>
             <span className="font-black text-xl text-white tracking-tight">
-              Apex<span className="text-purple-400">LMS</span>
+              GGC <span className="text-purple-400">Pasrur</span>
             </span>
-            <p className="text-[11px] text-slate-400">Department of Computer Science • Fall 2026</p>
+            <p className="text-[11px] text-slate-400">Department of Computer Science • LMS</p>
           </div>
         </div>
 
         <button
-          onClick={() => setIsRegisterOpen(true)}
-          className="text-xs font-bold text-purple-300 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 px-4 py-2 rounded-xl transition"
+          onClick={() => {
+            setMode(mode === 'login' ? 'register' : 'login');
+            setLoginError(null);
+            setRegError(null);
+            setIssuedStudentId(null);
+          }}
+          className="text-xs font-bold text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl transition border border-white/10"
         >
-          New Student? Register Account
+          {mode === 'login' ? 'Student Registration' : 'Back to Sign In'}
         </button>
       </header>
 
-      {/* Main Center Content */}
+      {/* Main Container */}
       <main className="relative z-10 max-w-md w-full mx-auto px-4 py-8">
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-6">
-          {/* Card Title */}
-          <div className="text-center space-y-1.5">
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Portal Authentication</h1>
-            <p className="text-xs text-slate-500">
-              Single intelligent login for Students, Faculty & Administrators
-            </p>
-          </div>
+        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100">
+          {/* ============================================================ */}
+          {/* VIEW A: CLEAN SIGN IN PAGE                                  */}
+          {/* ============================================================ */}
+          {mode === 'login' && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sign In</h1>
+                <p className="text-xs text-slate-500 mt-1">Enter your credentials to access your portal</p>
+              </div>
 
-          {/* Error Alert */}
-          {error && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2 animate-in fade-in">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              <span>{error}</span>
+              {loginError && (
+                <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                  <span>{loginError}</span>
+                </div>
+              )}
+
+              <form onSubmit={handleLoginSubmit} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    User ID / Phone
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. BCS3-A1-001, 03001234567, or admin"
+                      value={identifier}
+                      onChange={(e) => setIdentifier(e.target.value)}
+                      className="w-full text-xs font-medium pl-10 pr-3.5 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                    />
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Password
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="password"
+                      required
+                      placeholder="••••••••"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      className="w-full text-xs font-medium pl-10 pr-3.5 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                    />
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-3.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md transition"
+                >
+                  Sign In
+                </button>
+              </form>
+
+              <div className="pt-2 border-t border-slate-100 text-center">
+                <p className="text-xs text-slate-600">
+                  New student?{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('register');
+                      setLoginError(null);
+                    }}
+                    className="font-bold text-purple-700 hover:underline"
+                  >
+                    Register here
+                  </button>
+                </p>
+              </div>
             </div>
           )}
 
-          {/* Unified Login Form */}
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                Student ID / Teacher Phone / Admin Username
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. BCS26-001 or 03001234567 or admin"
-                  value={identifier}
-                  onChange={(e) => setIdentifier(e.target.value)}
-                  className="w-full text-xs font-medium pl-10 pr-3.5 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900 shadow-2xs font-mono"
-                />
-                <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-              </div>
-              <span className="text-[10px] text-slate-400 mt-1 block">
-                • Students enter issued ID (e.g. <strong>BCS26-001</strong>)<br />
-                • Teachers enter registered Phone (e.g. <strong>03001234567</strong>)<br />
-                • Admin enters <strong>admin</strong>
-              </span>
+          {/* ============================================================ */}
+          {/* VIEW B: CLEAN STUDENT SIGN UP PAGE                          */}
+          {/* ============================================================ */}
+          {mode === 'register' && (
+            <div className="space-y-5">
+              {issuedStudentId ? (
+                /* Registration Success Screen */
+                <div className="text-center space-y-4">
+                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
+                    <CheckCircle2 className="w-7 h-7" />
+                  </div>
+
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900">Registration Successful</h2>
+                    <p className="text-xs text-slate-500 mt-0.5">Please save your assigned Student Login ID</p>
+                  </div>
+
+                  <div className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-4 text-center space-y-1">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
+                      Your Student Login ID
+                    </span>
+                    <div className="flex items-center justify-center gap-2">
+                      <span className="text-2xl font-black font-mono text-purple-950">
+                        {issuedStudentId}
+                      </span>
+                      <button
+                        onClick={handleCopyId}
+                        className="p-1 rounded-lg bg-white border border-purple-200 hover:bg-purple-100 text-purple-700"
+                        title="Copy ID"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {copied && (
+                      <span className="text-[10px] font-bold text-emerald-600 block">Copied!</span>
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => {
+                      setIdentifier(issuedStudentId);
+                      setPassword('');
+                      setMode('login');
+                      setIssuedStudentId(null);
+                    }}
+                    className="w-full py-3 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md"
+                  >
+                    Proceed to Sign In
+                  </button>
+                </div>
+              ) : (
+                /* Registration Form */
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                      Student Registration
+                    </h1>
+                    <p className="text-xs text-slate-500 mt-1">Create your student portal account</p>
+                  </div>
+
+                  {regError && (
+                    <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                      <span>{regError}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleRegisterSubmit} className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Student Full Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Ahmad Ali"
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        Father Name
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Muhammad Ali"
+                        value={fatherName}
+                        onChange={(e) => setFatherName(e.target.value)}
+                        className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Semester</label>
+                        <select
+                          value={semester}
+                          onChange={(e) => setSemester(Number(e.target.value) as SemesterNumber)}
+                          className="w-full text-xs font-bold px-2 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                        >
+                          {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
+                            <option key={s} value={s}>
+                              Sem {s}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Section</label>
+                        <select
+                          value={section}
+                          onChange={(e) => setSection(e.target.value as Section)}
+                          className="w-full text-xs font-bold px-2 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                        >
+                          <option value="A1">Sec A1</option>
+                          <option value="A2">Sec A2</option>
+                          <option value="B">Sec B</option>
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Roll No (1..N)</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={200}
+                          required
+                          value={rollNumber}
+                          onChange={(e) => setRollNumber(Number(e.target.value))}
+                          className="w-full text-xs font-bold px-2.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="Min 6 characters"
+                          value={regPassword}
+                          onChange={(e) => setRegPassword(e.target.value)}
+                          className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">Confirm Password</label>
+                        <input
+                          type="password"
+                          required
+                          placeholder="Repeat password"
+                          value={regConfirmPassword}
+                          onChange={(e) => setRegConfirmPassword(e.target.value)}
+                          className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      className="w-full py-3 mt-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md transition"
+                    >
+                      Register Account
+                    </button>
+                  </form>
+
+                  <div className="pt-2 border-t border-slate-100 text-center">
+                    <p className="text-xs text-slate-600">
+                      Already have an account?{' '}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMode('login');
+                          setRegError(null);
+                        }}
+                        className="font-bold text-purple-700 hover:underline"
+                      >
+                        Sign In
+                      </button>
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
-
-            <div>
-              <label className="block text-xs font-extrabold text-slate-700 mb-1">
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  type="password"
-                  required
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full text-xs font-medium pl-10 pr-3.5 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900 shadow-2xs"
-                />
-                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-3.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-lg shadow-purple-900/30 transition hover:scale-[1.01] flex items-center justify-center gap-2"
-            >
-              <span>Sign In to Dashboard</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-
-          {/* New Student Register Callout */}
-          <div className="pt-2 border-t border-slate-100 text-center">
-            <p className="text-xs text-slate-600">
-              Are you a new student?{' '}
-              <button
-                type="button"
-                onClick={() => setIsRegisterOpen(true)}
-                className="font-bold text-purple-700 hover:underline"
-              >
-                Register your Roll Number
-              </button>
-            </p>
-          </div>
-
-          {/* Quick Demo Credentials Accordion */}
-          <div className="border border-slate-200 rounded-2xl overflow-hidden text-xs">
-            <button
-              type="button"
-              onClick={() => setShowDemoAccordion(!showDemoAccordion)}
-              className="w-full p-3 bg-slate-50 hover:bg-slate-100 flex items-center justify-between font-bold text-slate-700 transition"
-            >
-              <span className="flex items-center gap-1.5 text-purple-800">
-                <KeyRound className="w-3.5 h-3.5" />
-                Quick Demo Credentials (1-Click Fill)
-              </span>
-              <ChevronDown
-                className={`w-4 h-4 text-slate-400 transition-transform ${
-                  showDemoAccordion ? 'rotate-180' : ''
-                }`}
-              />
-            </button>
-
-            {showDemoAccordion && (
-              <div className="p-3 bg-white divide-y divide-slate-100 space-y-2">
-                <div className="pt-1 flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-800">Admin (HOD):</span>
-                    <p className="text-[11px] text-slate-500 font-mono">admin / admin123</p>
-                  </div>
-                  <button
-                    onClick={() => fillDemo('admin', 'admin123')}
-                    className="text-[10px] font-bold px-2 py-1 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200"
-                  >
-                    Use Admin
-                  </button>
-                </div>
-
-                <div className="pt-2 flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-800">Faculty (Dr. Sarah Khan):</span>
-                    <p className="text-[11px] text-slate-500 font-mono">03001234567 / teacher123</p>
-                  </div>
-                  <button
-                    onClick={() => fillDemo('03001234567', 'teacher123')}
-                    className="text-[10px] font-bold px-2 py-1 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200"
-                  >
-                    Use Teacher
-                  </button>
-                </div>
-
-                <div className="pt-2 flex items-center justify-between">
-                  <div>
-                    <span className="font-bold text-slate-800">Student (Ahmad Ali):</span>
-                    <p className="text-[11px] text-slate-500 font-mono">BCS26-001 / student123</p>
-                  </div>
-                  <button
-                    onClick={() => fillDemo('BCS26-001', 'student123')}
-                    className="text-[10px] font-bold px-2 py-1 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200"
-                  >
-                    Use Student
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
+          )}
         </div>
       </main>
 
       {/* Footer */}
       <footer className="relative z-10 max-w-7xl w-full mx-auto px-4 py-6 text-center text-xs text-slate-400">
-        Apex Learning Management System • BS Computer Science Assignment Portal • 100% Free Hosting Architecture
+        Govt. Graduate College Pasrur (GGC Pasrur) • BS Computer Science Assignment Portal
       </footer>
-
-      {/* Registration Modal */}
-      <StudentRegisterModal
-        isOpen={isRegisterOpen}
-        onClose={() => setIsRegisterOpen(false)}
-        onSuccessLogin={(newId) => {
-          setIdentifier(newId);
-          setPassword('');
-          setError(null);
-        }}
-      />
     </div>
   );
 };

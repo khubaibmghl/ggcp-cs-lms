@@ -90,17 +90,11 @@ class LocalDataStore {
     window.dispatchEvent(new Event('lms_storage_updated'));
   }
 
-  // Helper to generate a unique official student login ID e.g. BCS26-005
-  generateStudentLoginId(rollNumber: number): string {
+  // Unique Official Student Login ID: BCS{Semester}-{Section}-{Roll}
+  // e.g., Semester 3, Section A1, Roll 1 -> BCS3-A1-001
+  generateStudentLoginId(semester: number, section: string, rollNumber: number): string {
     const padded = String(rollNumber).padStart(3, '0');
-    let candidate = `BCS26-${padded}`;
-    const users = this.getUsers();
-    let counter = 1;
-    while (users.some((u) => u.loginId === candidate)) {
-      candidate = `BCS26-${padded}-${counter}`;
-      counter++;
-    }
-    return candidate;
+    return `BCS${semester}-${section}-${padded}`;
   }
 
   // --- Subjects (Curriculum) ---

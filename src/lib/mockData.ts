@@ -143,7 +143,7 @@ export const INITIAL_USERS: User[] = [
   },
   {
     id: 'usr-stud-1',
-    loginId: 'BCS26-001',
+    loginId: 'BCS3-A1-001',
     name: 'Ahmad Ali',
     fatherName: 'Muhammad Ali',
     email: 'ahmad.ali@student.college.edu',
@@ -157,7 +157,7 @@ export const INITIAL_USERS: User[] = [
   },
   {
     id: 'usr-stud-2',
-    loginId: 'BCS26-002',
+    loginId: 'BCS3-A1-002',
     name: 'Bilal Raza',
     fatherName: 'Raza Hussain',
     email: 'bilal.raza@student.college.edu',
@@ -171,7 +171,7 @@ export const INITIAL_USERS: User[] = [
   },
   {
     id: 'usr-stud-3',
-    loginId: 'BCS26-003',
+    loginId: 'BCS3-A1-003',
     name: 'Zainab Noor',
     fatherName: 'Noor Ahmad',
     email: 'zainab.noor@student.college.edu',
@@ -185,7 +185,7 @@ export const INITIAL_USERS: User[] = [
   },
   {
     id: 'usr-stud-4',
-    loginId: 'BCS26-004',
+    loginId: 'BCS3-A1-004',
     name: 'Usman Tariq',
     fatherName: 'Tariq Mehmood',
     email: 'usman.tariq@student.college.edu',
@@ -199,7 +199,7 @@ export const INITIAL_USERS: User[] = [
   },
   {
     id: 'usr-stud-5',
-    loginId: 'BCS26-005',
+    loginId: 'BCS3-B-001',
     name: 'Fatima Zahra',
     fatherName: 'Syed Zahir Shah',
     email: 'fatima.zahra@student.college.edu',
@@ -317,6 +317,64 @@ Draw the memory pointer changes on paper or write code with complete step-by-ste
     deadlineDate: '2026-11-10', // Expired! Demonstrates the automatic lockout
     gradingMode: 'manual',
     createdAt: '2026-11-01T12:00:00Z',
+  },
+  {
+    id: 'asg-501-01',
+    teacherId: 'usr-teach-1',
+    teacherName: 'Prof. Dr. Tariq Mahmood',
+    semester: 5,
+    subjectId: 'sub-cs501',
+    subjectCode: 'CS501',
+    subjectName: 'Operating Systems',
+    targetSections: ['All'],
+    title: 'Assignment 01: CPU Scheduling Simulator (FCFS, SJF & Round Robin)',
+    description: `Develop a process scheduling simulator in C++ or Python that reads process arrival times and burst times from standard input.
+Compute and display the Gantt chart sequence, Average Waiting Time (AWT), and Average Turnaround Time (ATAT).
+Your solution must handle arbitrary quantum values for Round Robin scheduling.`,
+    totalMarks: 20,
+    deadlineDate: futureDeadline, // Locks at 11:59:59 PM (Midnight)
+    gradingMode: 'hybrid',
+    testCases: [
+      { id: 'tc-501-1', input: '3\nP1 0 5\nP2 1 3\nP3 2 8', expectedOutput: 'AWT: 4.33', points: 10 },
+      { id: 'tc-501-2', input: '2\nP1 0 4\nP2 0 4', expectedOutput: 'AWT: 2.00', points: 10 },
+    ],
+    aiRubric: [
+      { id: 'rub-501-1', title: 'Process Queue & State Management', weight: 40, description: 'Correct state transitions from Ready to Running to Terminated' },
+      { id: 'rub-501-2', title: 'Round Robin Quantum Preemption', weight: 40, description: 'Proper context switching when quantum expires' },
+      { id: 'rub-501-3', title: 'Metrics Calculation', weight: 20, description: 'Accurate AWT and ATAT formulas' },
+    ],
+    resourceFileName: 'cpu_scheduler_template.py',
+    resourceFileContent: `# CS501 Operating Systems Starter Template
+# Implement Process class and Scheduling algorithms
+class Process:
+    def __init__(self, pid, arrival, burst):
+        self.pid = pid
+        self.arrival = arrival
+        self.burst = burst
+        self.waiting_time = 0
+        self.turnaround_time = 0
+
+def simulate_fcfs(processes):
+    pass
+`,
+    createdAt: '2026-11-15T10:00:00Z',
+  },
+  {
+    id: 'asg-101-01',
+    teacherId: 'usr-teach-2',
+    teacherName: 'Engr. Hamza Ali',
+    semester: 1,
+    subjectId: 'sub-cs101',
+    subjectCode: 'CS101',
+    subjectName: 'Programming Fundamentals',
+    targetSections: ['All'],
+    title: 'Assignment 01: Procedural Logic & Dynamic 2D Matrix Manipulation',
+    description: `Write a modular C++ program to perform dynamic 2D array memory allocation using pointers.
+Implement matrix multiplication, transpose, and saddle point detection without using the standard vector library.`,
+    totalMarks: 15,
+    deadlineDate: futureDeadline,
+    gradingMode: 'hybrid',
+    createdAt: '2026-11-15T11:00:00Z',
   },
 ];
 

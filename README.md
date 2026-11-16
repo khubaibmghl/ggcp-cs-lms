@@ -1,4 +1,4 @@
-# 🎓 Apex LMS — BS Computer Science Assignment Management System
+# 🎓 GGC Pasrur LMS — BS Computer Science Assignment Management System
 
 A production-grade, responsive, and modern Learning Management System tailored for **BS Computer Science** classes. Engineered for **zero-cost operation** (100% free domain and hosting), strict **academic integrity**, and a **step-by-step wizard workflow** for students and instructors.
 

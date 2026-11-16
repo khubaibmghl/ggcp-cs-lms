@@ -1,19 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useAuth } from '@/context/AuthContext';
-import {
-  GraduationCap,
-  Bell,
-  ChevronDown,
-  LogOut,
-  Sparkles,
-  User,
-} from 'lucide-react';
+import { GraduationCap, LogOut } from 'lucide-react';
 
 export const Navbar: React.FC = () => {
-  const { currentUser, users, switchUser, logout } = useAuth();
-  const [showUserMenu, setShowUserMenu] = useState(false);
+  const { currentUser, logout } = useAuth();
 
   if (!currentUser) return null;
 
@@ -29,56 +21,17 @@ export const Navbar: React.FC = () => {
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-extrabold text-xl tracking-tight text-slate-900">
-                  Apex<span className="text-purple-700">LMS</span>
+                  GGC <span className="text-purple-700">Pasrur</span>
                 </span>
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 uppercase tracking-wider">
-                  BS CS Portal
+                  BS CS LMS
                 </span>
               </div>
               <p className="text-xs text-slate-500 hidden sm:block">Department of Computer Science • Fall 2026</p>
             </div>
           </div>
 
-          {/* Center: Live Role Quick Switcher (Demo / Testing helper) */}
-          <div className="hidden lg:flex items-center space-x-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <span className="text-xs font-semibold text-slate-500 px-2 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              Role Switcher:
-            </span>
-            <select
-              value={currentUser?.id || ''}
-              onChange={(e) => switchUser(e.target.value)}
-              className="text-xs font-medium bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-slate-700 focus:outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-2xs"
-            >
-              <optgroup label="System Administrator">
-                {users
-                  .filter((u) => u.role === 'admin')
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      🛡️ {u.name} (Admin / HOD)
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="Faculty / Teachers">
-                {users
-                  .filter((u) => u.role === 'teacher')
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      👨‍🏫 {u.name} (Phone: {u.phone})
-                    </option>
-                  ))}
-              </optgroup>
-              <optgroup label="Students (Roll 1..N)">
-                {users
-                  .filter((u) => u.role === 'student')
-                  .map((u) => (
-                    <option key={u.id} value={u.id}>
-                      🎓 {u.name} ({u.loginId} • Roll #{u.rollNumber})
-                    </option>
-                  ))}
-              </optgroup>
-            </select>
-          </div>
+
 
           {/* Right Profile & Logout Controls */}
           <div className="flex items-center space-x-3">

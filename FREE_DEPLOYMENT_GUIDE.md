@@ -1,6 +1,6 @@
 # 🚀 Zero-Cost Deployment Guide (100% Free Domain & Hosting)
 
-This guide walks you through deploying the **Apex LMS (BS Computer Science Assignment Management System)** to the internet with **0 budget (100% free forever)** using **Vercel** and **GitHub**.
+This guide walks you through deploying the **GGC Pasrur LMS (BS Computer Science Assignment Management System)** to the internet with **0 budget (100% free forever)** using **Vercel** and **GitHub**.
 
 ---
 

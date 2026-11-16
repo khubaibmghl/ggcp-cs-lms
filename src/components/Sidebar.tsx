@@ -200,25 +200,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
         </nav>
       </div>
 
-      {/* Footer Info Box & Logout Button */}
-      <div className="border-t border-slate-800 pt-4 space-y-3">
+      {/* Footer / Sign Out */}
+      <div className="border-t border-slate-800 pt-4">
         <button
           onClick={logout}
           className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-bold bg-rose-950/60 border border-rose-800/60 text-rose-300 hover:bg-rose-900 hover:text-white transition"
         >
           <LogOut className="w-4 h-4" />
-          <span>Sign Out of Account</span>
+          <span>Sign Out</span>
         </button>
-
-        <div className="bg-slate-800/40 p-2.5 rounded-xl border border-slate-700/40 text-[10px] text-slate-400">
-          <p className="font-semibold text-slate-300 flex items-center gap-1">
-            <Clock className="w-3 h-3 text-purple-400" />
-            Deadline Rule
-          </p>
-          <p className="text-[10px] mt-0.5 text-slate-400 leading-tight">
-            Assignments lock at 11:59:59 PM (Midnight).
-          </p>
-        </div>
       </div>
     </aside>
   );
