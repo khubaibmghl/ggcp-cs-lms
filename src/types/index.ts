@@ -17,10 +17,14 @@ export interface Subject {
 
 export interface User {
   id: string;
+  loginId: string; // System-generated Student ID (e.g. BCS26-001) or Admin username
   name: string;
   email: string;
+  password: string; // For authentication
   role: UserRole;
   avatar?: string;
+  phone?: string; // Used by teachers for login (e.g. 03001234567)
+  fatherName?: string; // For students
   // Teacher-specific fields:
   status?: TeacherStatus;
   taughtSemester?: SemesterNumber;

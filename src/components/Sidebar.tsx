@@ -8,13 +8,10 @@ import {
   FileCheck2,
   Users2,
   ShieldAlert,
-  Sparkles,
   Layers,
   CheckCircle,
-  HelpCircle,
-  Calendar,
-  AlertCircle,
   Clock,
+  LogOut,
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -23,7 +20,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) => {
-  const { currentUser } = useAuth();
+  const { currentUser, logout } = useAuth();
   if (!currentUser) return null;
 
   const role = currentUser.role;
@@ -44,13 +41,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
             </span>
           </div>
           {role === 'student' && (
-            <p className="text-[11px] text-slate-400 mt-1 font-mono">
-              Semester {currentUser.semester} • Section {currentUser.section} • Roll #{currentUser.rollNumber}
+            <p className="text-[11px] text-purple-300 mt-1 font-mono">
+              ID: {currentUser.loginId} • Roll #{currentUser.rollNumber} (Sec {currentUser.section})
             </p>
           )}
           {role === 'teacher' && (
             <p className="text-[11px] text-purple-300 mt-1 font-medium">
-              {currentUser.taughtSubjectName || 'CS Faculty Member'}
+              Phone: {currentUser.phone} • Sem {currentUser.taughtSemester}
+            </p>
+          )}
+          {role === 'admin' && (
+            <p className="text-[11px] text-purple-300 mt-1 font-medium">
+              Head of Department
             </p>
           )}
         </div>
@@ -158,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
                 }`}
               >
                 <CheckCircle className="w-4 h-4 text-emerald-400" />
-                <span>Teacher Approvals</span>
+                <span>Faculty Directory</span>
               </button>
 
               <button
@@ -198,15 +200,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
         </nav>
       </div>
 
-      {/* Footer Info Box */}
-      <div className="border-t border-slate-800 pt-4 space-y-2">
-        <div className="bg-slate-800/40 p-3 rounded-xl border border-slate-700/40 text-[11px] text-slate-400">
-          <p className="font-semibold text-slate-300 flex items-center gap-1.5">
-            <Clock className="w-3.5 h-3.5 text-purple-400" />
+      {/* Footer Info Box & Logout Button */}
+      <div className="border-t border-slate-800 pt-4 space-y-3">
+        <button
+          onClick={logout}
+          className="w-full flex items-center justify-center space-x-2 px-3 py-2.5 rounded-xl text-xs font-bold bg-rose-950/60 border border-rose-800/60 text-rose-300 hover:bg-rose-900 hover:text-white transition"
+        >
+          <LogOut className="w-4 h-4" />
+          <span>Sign Out of Account</span>
+        </button>
+
+        <div className="bg-slate-800/40 p-2.5 rounded-xl border border-slate-700/40 text-[10px] text-slate-400">
+          <p className="font-semibold text-slate-300 flex items-center gap-1">
+            <Clock className="w-3 h-3 text-purple-400" />
             Deadline Rule
           </p>
-          <p className="text-[10px] mt-1 text-slate-400 leading-tight">
-            Assignments automatically lock at 11:59:59 PM (midnight) of the due date.
+          <p className="text-[10px] mt-0.5 text-slate-400 leading-tight">
+            Assignments lock at 11:59:59 PM (Midnight).
           </p>
         </div>
       </div>

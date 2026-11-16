@@ -52,9 +52,6 @@ class LocalDataStore {
     if (!localStorage.getItem(STORAGE_KEYS.SUBMISSIONS)) {
       this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
     }
-    if (!localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID)) {
-      this.set(STORAGE_KEYS.ACTIVE_USER_ID, 'usr-teach-1'); // default to Dr. Sarah Khan
-    }
   }
 
   // --- Users ---
@@ -77,13 +74,33 @@ class LocalDataStore {
     this.saveUsers(users);
   }
 
-  // Active User session
-  getActiveUserId(): string {
-    return this.get<string>(STORAGE_KEYS.ACTIVE_USER_ID, 'usr-teach-1');
+  // Active User session (null means user is logged out and on the landing login page)
+  getActiveUserId(): string | null {
+    if (!this.isClient) return null;
+    return localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID);
   }
 
-  setActiveUserId(id: string): void {
-    this.set(STORAGE_KEYS.ACTIVE_USER_ID, id);
+  setActiveUserId(id: string | null): void {
+    if (!this.isClient) return;
+    if (id) {
+      localStorage.setItem(STORAGE_KEYS.ACTIVE_USER_ID, id);
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.ACTIVE_USER_ID);
+    }
+    window.dispatchEvent(new Event('lms_storage_updated'));
+  }
+
+  // Helper to generate a unique official student login ID e.g. BCS26-005
+  generateStudentLoginId(rollNumber: number): string {
+    const padded = String(rollNumber).padStart(3, '0');
+    let candidate = `BCS26-${padded}`;
+    const users = this.getUsers();
+    let counter = 1;
+    while (users.some((u) => u.loginId === candidate)) {
+      candidate = `BCS26-${padded}-${counter}`;
+      counter++;
+    }
+    return candidate;
   }
 
   // --- Subjects (Curriculum) ---
@@ -155,7 +172,7 @@ class LocalDataStore {
     this.set(STORAGE_KEYS.SUBJECTS, INITIAL_SUBJECTS);
     this.set(STORAGE_KEYS.ASSIGNMENTS, INITIAL_ASSIGNMENTS);
     this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
-    this.set(STORAGE_KEYS.ACTIVE_USER_ID, 'usr-teach-1');
+    this.setActiveUserId(null);
   }
 }
 

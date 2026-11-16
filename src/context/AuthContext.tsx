@@ -4,21 +4,30 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, UserRole, SemesterNumber, Section } from '@/types';
 import { dataStore } from '@/lib/storage';
 
+interface LoginResult {
+  success: boolean;
+  message?: string;
+  user?: User;
+}
+
 interface AuthContextType {
   currentUser: User | null;
   users: User[];
   switchUser: (userId: string) => void;
-  login: (email: string) => boolean;
+  login: (identifier: string, password: string) => LoginResult;
   registerStudent: (data: {
     name: string;
-    email: string;
+    fatherName: string;
     rollNumber: number;
     semester: SemesterNumber;
     section: Section;
-  }) => User;
-  registerTeacher: (data: {
+    password: string;
+  }) => { user: User; generatedLoginId: string };
+  createTeacherByAdmin: (data: {
     name: string;
+    phone: string;
     email: string;
+    password: string;
     taughtSemester: SemesterNumber;
     taughtSubjectId: string;
     taughtSubjectName: string;
@@ -40,8 +49,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const allUsers = dataStore.getUsers();
     setUsers(allUsers);
     const activeId = dataStore.getActiveUserId();
-    const found = allUsers.find((u) => u.id === activeId) || allUsers[1] || allUsers[0];
-    setCurrentUser(found || null);
+    if (activeId) {
+      const found = allUsers.find((u) => u.id === activeId);
+      setCurrentUser(found || null);
+    } else {
+      setCurrentUser(null);
+    }
   };
 
   useEffect(() => {
@@ -51,8 +64,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const allUsers = dataStore.getUsers();
       setUsers(allUsers);
       const activeId = dataStore.getActiveUserId();
-      const found = allUsers.find((u) => u.id === activeId);
-      if (found) setCurrentUser(found);
+      if (activeId) {
+        const found = allUsers.find((u) => u.id === activeId);
+        setCurrentUser(found || null);
+      } else {
+        setCurrentUser(null);
+      }
     };
 
     window.addEventListener('lms_storage_updated', handleStorageUpdate);
@@ -67,59 +84,100 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const login = (email: string): boolean => {
-    const found = users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-    if (found) {
-      switchUser(found.id);
-      return true;
+  // Intelligent Multi-Role Unified Login Validator
+  const login = (identifier: string, password: string): LoginResult => {
+    const cleanId = identifier.trim().toLowerCase();
+    const cleanPhone = identifier.trim().replace(/[-\s]/g, '');
+
+    const found = users.find((u) => {
+      const matchLoginId = u.loginId?.toLowerCase() === cleanId;
+      const matchEmail = u.email?.toLowerCase() === cleanId;
+      const matchPhone = u.phone?.replace(/[-\s]/g, '') === cleanPhone;
+      return matchLoginId || matchEmail || matchPhone;
+    });
+
+    if (!found) {
+      return {
+        success: false,
+        message: 'Account not found. Please verify your Student ID, Phone Number, or Username.',
+      };
     }
-    return false;
+
+    if (found.password !== password) {
+      return {
+        success: false,
+        message: 'Incorrect password. Please try again.',
+      };
+    }
+
+    // Set active user session
+    dataStore.setActiveUserId(found.id);
+    setCurrentUser(found);
+    return {
+      success: true,
+      user: found,
+    };
   };
 
+  // Student Self-Registration: Issues system-generated Login ID
   const registerStudent = (data: {
     name: string;
-    email: string;
+    fatherName: string;
     rollNumber: number;
     semester: SemesterNumber;
     section: Section;
-  }): User => {
+    password: string;
+  }) => {
+    const generatedLoginId = dataStore.generateStudentLoginId(data.rollNumber);
+
     const newUser: User = {
       id: `usr-stud-${Date.now()}`,
+      loginId: generatedLoginId,
       name: data.name,
-      email: data.email,
+      fatherName: data.fatherName,
+      email: `${generatedLoginId.toLowerCase()}@student.college.edu`,
+      password: data.password,
       role: 'student',
       rollNumber: data.rollNumber,
       semester: data.semester,
       section: data.section,
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${data.rollNumber}`,
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${generatedLoginId}`,
       createdAt: new Date().toISOString(),
     };
+
     dataStore.addUser(newUser);
-    switchUser(newUser.id);
-    return newUser;
+    setUsers(dataStore.getUsers());
+    return { user: newUser, generatedLoginId };
   };
 
-  const registerTeacher = (data: {
+  // Admin Adds/Creates Teacher Account
+  const createTeacherByAdmin = (data: {
     name: string;
+    phone: string;
     email: string;
+    password: string;
     taughtSemester: SemesterNumber;
     taughtSubjectId: string;
     taughtSubjectName: string;
   }): User => {
     const newUser: User = {
       id: `usr-teach-${Date.now()}`,
-      name: data.name,
-      email: data.email,
+      loginId: data.phone.trim(),
+      phone: data.phone.trim(),
+      name: data.name.trim(),
+      email: data.email.trim(),
+      password: data.password.trim(),
       role: 'teacher',
-      status: 'pending', // Starts in pending status waiting for admin approval
+      status: 'approved', // Pre-approved when created directly by the admin
       taughtSemester: data.taughtSemester,
       taughtSubjectId: data.taughtSubjectId,
       taughtSubjectName: data.taughtSubjectName,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`,
       createdAt: new Date().toISOString(),
     };
+
     dataStore.addUser(newUser);
-    switchUser(newUser.id);
+    setUsers(dataStore.getUsers());
     return newUser;
   };
 
@@ -134,10 +192,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
-    // switch to student or general view
-    if (users.length > 0) {
-      switchUser(users[0].id);
-    }
+    dataStore.setActiveUserId(null);
+    setCurrentUser(null);
   };
 
   const refreshUsers = () => {
@@ -152,7 +208,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         switchUser,
         login,
         registerStudent,
-        registerTeacher,
+        createTeacherByAdmin,
         approveTeacher,
         rejectTeacher,
         logout,
