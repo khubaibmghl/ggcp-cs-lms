@@ -5,6 +5,8 @@ import {
   INITIAL_ASSIGNMENTS,
   INITIAL_SUBMISSIONS,
 } from './mockData';
+import { supabaseService } from './supabaseService';
+import { isSupabaseConfigured } from './supabaseClient';
 
 const STORAGE_KEYS = {
   USERS: 'college_lms_users',
@@ -65,6 +67,52 @@ class LocalDataStore {
         this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
       }
     }
+
+    // Cloud Synchronization (Supabase PostgreSQL)
+    if (isSupabaseConfigured) {
+      this.syncWithSupabase();
+    }
+  }
+
+  async syncWithSupabase(): Promise<void> {
+    try {
+      const [cloudUsers, cloudSubjects, cloudAssignments, cloudSubmissions] = await Promise.all([
+        supabaseService.fetchUsers(),
+        supabaseService.fetchSubjects(),
+        supabaseService.fetchAssignments(),
+        supabaseService.fetchSubmissions(),
+      ]);
+
+      if (cloudUsers && cloudUsers.length > 0) {
+        this.set(STORAGE_KEYS.USERS, cloudUsers);
+      } else if (isSupabaseConfigured) {
+        // Seed cloud DB with initial users
+        const localUsers = this.getUsers();
+        for (const u of localUsers) {
+          await supabaseService.upsertUser(u);
+        }
+      }
+
+      if (cloudSubjects && cloudSubjects.length > 0) {
+        this.set(STORAGE_KEYS.SUBJECTS, cloudSubjects);
+      } else if (isSupabaseConfigured) {
+        // Seed cloud DB with initial subjects
+        const localSubs = this.getSubjects();
+        for (const s of localSubs) {
+          await supabaseService.upsertSubject(s);
+        }
+      }
+
+      if (cloudAssignments && cloudAssignments.length > 0) {
+        this.set(STORAGE_KEYS.ASSIGNMENTS, cloudAssignments);
+      }
+
+      if (cloudSubmissions && cloudSubmissions.length > 0) {
+        this.set(STORAGE_KEYS.SUBMISSIONS, cloudSubmissions);
+      }
+    } catch (err) {
+      console.warn('Supabase background sync notification:', err);
+    }
   }
 
   // --- Users ---
@@ -80,11 +128,18 @@ class LocalDataStore {
     const users = this.getUsers();
     users.push(user);
     this.saveUsers(users);
+    if (isSupabaseConfigured) {
+      supabaseService.upsertUser(user).catch(console.error);
+    }
   }
 
   updateUser(id: string, updates: Partial<User>): void {
     const users = this.getUsers().map((u) => (u.id === id ? { ...u, ...updates } : u));
     this.saveUsers(users);
+    if (isSupabaseConfigured) {
+      const updated = users.find((u) => u.id === id);
+      if (updated) supabaseService.upsertUser(updated).catch(console.error);
+    }
   }
 
   // Active User session (null means user is logged out and on the landing login page)
@@ -123,11 +178,17 @@ class LocalDataStore {
     const subjects = this.getSubjects();
     subjects.push(subject);
     this.saveSubjects(subjects);
+    if (isSupabaseConfigured) {
+      supabaseService.upsertSubject(subject).catch(console.error);
+    }
   }
 
   deleteSubject(id: string): void {
     const subjects = this.getSubjects().filter((s) => s.id !== id);
     this.saveSubjects(subjects);
+    if (isSupabaseConfigured) {
+      supabaseService.deleteSubject(id).catch(console.error);
+    }
   }
 
   // --- Assignments ---
@@ -143,6 +204,9 @@ class LocalDataStore {
     const assignments = this.getAssignments();
     assignments.unshift(assignment); // latest first
     this.saveAssignments(assignments);
+    if (isSupabaseConfigured) {
+      supabaseService.upsertAssignment(assignment).catch(console.error);
+    }
   }
 
   deleteAssignment(id: string): void {
@@ -170,6 +234,9 @@ class LocalDataStore {
       submissions.push(submission);
     }
     this.saveSubmissions(submissions);
+    if (isSupabaseConfigured) {
+      supabaseService.upsertSubmission(submission).catch(console.error);
+    }
   }
 
   // Reset all to fresh defaults
