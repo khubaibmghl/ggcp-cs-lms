@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { dataStore } from '@/lib/storage';
-import { Subject, SemesterNumber, User } from '@/types';
+import { Subject, SemesterNumber, User, Section, TeacherCourseAssignment } from '@/types';
 import {
   Layers,
   CheckCircle2,
@@ -19,6 +19,10 @@ import {
   UserPlus,
   Phone,
   Lock,
+  ArrowRight,
+  ArrowLeft,
+  Check,
+  Sparkles,
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -39,16 +43,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
   const [newCreditHours, setNewCreditHours] = useState(3);
   const [newDescription, setNewDescription] = useState('');
 
-  // New Teacher creation form state (Admin direct creation)
+  // 2-Step Teacher Creation Form State
+  const [teacherWizardStep, setTeacherWizardStep] = useState<1 | 2>(1);
   const [tName, setTName] = useState('');
   const [tPhone, setTPhone] = useState('');
   const [tEmail, setTEmail] = useState('');
   const [tPassword, setTPassword] = useState('teacher123');
-  const [tSemester, setTSemester] = useState<SemesterNumber>(3);
-  const semesterSubjects = subjects.filter((s) => s.semester === tSemester);
-  const [tSubjectId, setTSubjectId] = useState<string>(
-    semesterSubjects[0]?.id || subjects[0]?.id || ''
-  );
+  const [tMatrixSemester, setTMatrixSemester] = useState<SemesterNumber>(1);
+  const [assignedCoursesState, setAssignedCoursesState] = useState<TeacherCourseAssignment[]>([]);
 
   const pendingTeachers = users.filter((u) => u.role === 'teacher' && u.status === 'pending');
   const approvedTeachers = users.filter((u) => u.role === 'teacher' && u.status === 'approved');
@@ -82,32 +84,141 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
     }
   };
 
-  const handleCreateTeacher = (e: React.FormEvent) => {
+  // --- Step 2 Matrix Helper Functions ---
+  const isSectionSelected = (subjectId: string, section: Section): boolean => {
+    const found = assignedCoursesState.find((c) => c.subjectId === subjectId);
+    return found ? found.sections.includes(section) : false;
+  };
+
+  const getAssignedSectionsForSubject = (subjectId: string): Section[] => {
+    const found = assignedCoursesState.find((c) => c.subjectId === subjectId);
+    return found ? found.sections : [];
+  };
+
+  const toggleTeacherSection = (subject: Subject, section: Section) => {
+    setAssignedCoursesState((prev) => {
+      const existing = prev.find((c) => c.subjectId === subject.id);
+      if (!existing) {
+        return [
+          ...prev,
+          {
+            subjectId: subject.id,
+            subjectCode: subject.code,
+            subjectName: subject.name,
+            semester: subject.semester,
+            sections: [section],
+          },
+        ];
+      }
+
+      const hasSection = existing.sections.includes(section);
+      const newSections = hasSection
+        ? existing.sections.filter((s) => s !== section)
+        : [...existing.sections, section];
+
+      if (newSections.length === 0) {
+        return prev.filter((c) => c.subjectId !== subject.id);
+      }
+
+      return prev.map((c) =>
+        c.subjectId === subject.id ? { ...c, sections: newSections } : c
+      );
+    });
+  };
+
+  const toggleAllSectionsForSubject = (subject: Subject) => {
+    setAssignedCoursesState((prev) => {
+      const existing = prev.find((c) => c.subjectId === subject.id);
+      const allSections: Section[] = ['A1', 'A2', 'B'];
+      if (existing && existing.sections.length === 3) {
+        // Unselect all 3
+        return prev.filter((c) => c.subjectId !== subject.id);
+      }
+      if (!existing) {
+        return [
+          ...prev,
+          {
+            subjectId: subject.id,
+            subjectCode: subject.code,
+            subjectName: subject.name,
+            semester: subject.semester,
+            sections: allSections,
+          },
+        ];
+      }
+      return prev.map((c) =>
+        c.subjectId === subject.id ? { ...c, sections: allSections } : c
+      );
+    });
+  };
+
+  const removeAssignedCourse = (subjectId: string) => {
+    setAssignedCoursesState((prev) => prev.filter((c) => c.subjectId !== subjectId));
+  };
+
+  const totalAssignedSectionsCount = assignedCoursesState.reduce(
+    (sum, c) => sum + c.sections.length,
+    0
+  );
+
+  const getSemesterAssignedCount = (sem: SemesterNumber): number => {
+    return assignedCoursesState
+      .filter((c) => c.semester === sem)
+      .reduce((sum, c) => sum + c.sections.length, 0);
+  };
+
+  // --- Step 1 Validation & Navigation ---
+  const handleStep1Next = (e: React.FormEvent) => {
     e.preventDefault();
     if (!tName.trim() || !tPhone.trim() || !tPassword.trim()) {
-      alert('Please fill in teacher name, phone number, and password.');
+      alert('Please fill in teacher full name, phone number, and password.');
       return;
     }
+    setTeacherWizardStep(2);
+  };
 
-    const chosenSubject = subjects.find((s) => s.id === tSubjectId) || semesterSubjects[0];
+  // --- Step 2 Final Submission ---
+  const handleCreateTeacher = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (assignedCoursesState.length === 0) {
+      alert('Please assign at least one subject and section (A1, A2, or B) to this teacher.');
+      return;
+    }
 
     createTeacherByAdmin({
       name: tName.trim(),
       phone: tPhone.trim(),
       email: tEmail.trim() || `${tPhone.trim()}@college.edu`,
       password: tPassword.trim(),
-      taughtSemester: tSemester,
-      taughtSubjectId: chosenSubject.id,
-      taughtSubjectName: `${chosenSubject.code} - ${chosenSubject.name}`,
+      assignedCourses: assignedCoursesState,
     });
 
+    const summary = assignedCoursesState
+      .map((c) => `${c.subjectCode} (${c.sections.join(', ')})`)
+      .join(', ');
+
     alert(
-      `Teacher account created successfully! The teacher can now log in using Phone Number: ${tPhone} and Password: ${tPassword}`
+      `Teacher account created successfully!\n\nFaculty: ${tName}\nUser ID (Phone): ${tPhone}\nPassword: ${tPassword}\nAssigned Courses: ${summary}`
     );
+
     setShowAddTeacherModal(false);
+    setTeacherWizardStep(1);
     setTName('');
     setTPhone('');
     setTEmail('');
+    setTPassword('teacher123');
+    setAssignedCoursesState([]);
+  };
+
+  const openTeacherModal = () => {
+    setTeacherWizardStep(1);
+    setTName('');
+    setTPhone('');
+    setTEmail('');
+    setTPassword('teacher123');
+    setAssignedCoursesState([]);
+    setTMatrixSemester(1);
+    setShowAddTeacherModal(true);
   };
 
   return (
@@ -130,7 +241,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
 
           <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setShowAddTeacherModal(true)}
+              onClick={openTeacherModal}
               className="inline-flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-xs font-bold transition shadow-lg shadow-emerald-950/40"
             >
               <UserPlus className="w-4 h-4" />
@@ -198,7 +309,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
             </p>
           </div>
           <button
-            onClick={() => setShowAddTeacherModal(true)}
+            onClick={openTeacherModal}
             className="text-xs font-bold text-purple-700 hover:underline flex items-center gap-1"
           >
             + Create New Teacher
@@ -212,35 +323,64 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
                 <th className="py-3 px-4">Faculty Name</th>
                 <th className="py-3 px-4">Login Phone Number</th>
                 <th className="py-3 px-4">Official Email</th>
-                <th className="py-3 px-4">Semester & Taught Subject</th>
+                <th className="py-3 px-4">Assigned Courses & Sections</th>
                 <th className="py-3 px-4 text-center">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-              {approvedTeachers.map((teach) => (
-                <tr key={teach.id} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 font-bold flex items-center justify-center text-xs">
-                      {teach.name.charAt(0)}
-                    </div>
-                    {teach.name}
-                  </td>
-                  <td className="py-3.5 px-4 font-mono font-bold text-purple-900">
-                    {teach.phone || 'N/A'}
-                  </td>
-                  <td className="py-3.5 px-4 text-slate-600 font-mono">{teach.email}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="font-semibold text-slate-900">
-                      Sem {teach.taughtSemester}: {teach.taughtSubjectName}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
-                      Active
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {approvedTeachers.map((teach) => {
+                const assigned = teach.assignedCourses && teach.assignedCourses.length > 0
+                  ? teach.assignedCourses
+                  : teach.taughtSubjectName
+                  ? [
+                      {
+                        subjectId: teach.taughtSubjectId || '',
+                        subjectCode: teach.taughtSubjectName.split(' ')[0] || 'CS',
+                        subjectName: teach.taughtSubjectName,
+                        semester: teach.taughtSemester || 1,
+                        sections: ['A1', 'A2', 'B'] as Section[],
+                      },
+                    ]
+                  : [];
+
+                return (
+                  <tr key={teach.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-800 font-bold flex items-center justify-center text-xs">
+                        {teach.name.charAt(0)}
+                      </div>
+                      {teach.name}
+                    </td>
+                    <td className="py-3.5 px-4 font-mono font-bold text-purple-900">
+                      {teach.phone || 'N/A'}
+                    </td>
+                    <td className="py-3.5 px-4 text-slate-600 font-mono">{teach.email}</td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        {assigned.length > 0 ? (
+                          assigned.map((c, idx) => (
+                            <span
+                              key={idx}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-900 text-[11px] font-semibold"
+                            >
+                              <span className="font-bold text-purple-700">{c.subjectCode}</span>
+                              <span className="text-slate-500 font-normal">Sem {c.semester}:</span>
+                              <span className="font-mono text-purple-950 font-bold">[{c.sections.join(', ')}]</span>
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-slate-400 italic text-xs">No courses assigned</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                        Active
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -315,141 +455,420 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
         </div>
       </section>
 
-      {/* --- MODAL: CREATE TEACHER BY ADMIN --- */}
+      {/* --- MODAL: 2-STEP TEACHER CREATION WIZARD --- */}
       {showAddTeacherModal && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
-                  <UserPlus className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header & 2-Step Indicator */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex-shrink-0 bg-slate-50/50">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      Create Faculty Account
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      {teacherWizardStep === 1
+                        ? 'Step 1 of 2: Enter teacher personal and authentication credentials'
+                        : `Step 2 of 2: Assign semester subjects and sections for ${tName || 'Faculty'}`}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Create Faculty Account</h3>
-                  <p className="text-[11px] text-slate-500">Teacher will log in via phone number.</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowAddTeacherModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold p-1"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateTeacher} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Instructor Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Dr. Muhammad Usman"
-                  value={tName}
-                  onChange={(e) => setTName(e.target.value)}
-                  className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                />
+                <button
+                  onClick={() => setShowAddTeacherModal(false)}
+                  className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:text-slate-700 hover:bg-slate-200 flex items-center justify-center text-sm font-bold transition"
+                >
+                  ✕
+                </button>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Phone Number (Used for Login)
-                </label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. 03001234567"
-                  value={tPhone}
-                  onChange={(e) => setTPhone(e.target.value)}
-                  className="w-full text-xs font-mono font-bold px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Official Email
-                </label>
-                <input
-                  type="email"
-                  placeholder="usman@college.edu"
-                  value={tEmail}
-                  onChange={(e) => setTEmail(e.target.value)}
-                  className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Taught Semester
-                  </label>
-                  <select
-                    value={tSemester}
-                    onChange={(e) => {
-                      const sem = Number(e.target.value) as SemesterNumber;
-                      setTSemester(sem);
-                      const subList = subjects.filter((s) => s.semester === sem);
-                      if (subList.length > 0) setTSubjectId(subList[0].id);
-                    }}
-                    className="w-full text-xs font-bold px-2 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                  >
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-                      <option key={s} value={s}>
-                        Sem {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Taught Subject
-                  </label>
-                  <select
-                    value={tSubjectId}
-                    onChange={(e) => setTSubjectId(e.target.value)}
-                    className="w-full text-xs font-medium px-2 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                  >
-                    {semesterSubjects.map((sub) => (
-                      <option key={sub.id} value={sub.id}>
-                        {sub.code} - {sub.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Assign Password
-                </label>
-                <input
-                  type="password"
-                  required
-                  placeholder="e.g. teacher123"
-                  value={tPassword}
-                  onChange={(e) => setTPassword(e.target.value)}
-                  className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+              {/* Step Tabs / Progress */}
+              <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
-                  onClick={() => setShowAddTeacherModal(false)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                  onClick={() => setTeacherWizardStep(1)}
+                  className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition ${
+                    teacherWizardStep === 1
+                      ? 'bg-white border-purple-600 shadow-xs'
+                      : 'bg-white/60 border-slate-200 hover:bg-white text-slate-500'
+                  }`}
                 >
-                  Cancel
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                      teacherWizardStep === 1
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {teacherWizardStep === 2 ? '✓' : '1'}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 leading-tight">Step 1: Personal Details</p>
+                    <p className="text-[11px] text-slate-500 truncate max-w-[180px]">
+                      {tName ? `${tName} (${tPhone || 'No Phone'})` : 'Name, Phone & Password'}
+                    </p>
+                  </div>
                 </button>
+
                 <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-900/20"
+                  type="button"
+                  onClick={() => {
+                    if (!tName.trim() || !tPhone.trim() || !tPassword.trim()) {
+                      alert('Please complete Step 1 (Name, Phone, Password) first.');
+                      return;
+                    }
+                    setTeacherWizardStep(2);
+                  }}
+                  className={`flex items-center gap-2.5 p-3 rounded-2xl border text-left transition ${
+                    teacherWizardStep === 2
+                      ? 'bg-white border-purple-600 shadow-xs'
+                      : 'bg-white/60 border-slate-200 hover:bg-white text-slate-500'
+                  }`}
                 >
-                  Save & Create Teacher
+                  <div
+                    className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${
+                      teacherWizardStep === 2
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    2
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-900 leading-tight">Step 2: Course & Section Matrix</p>
+                    <p className="text-[11px] text-slate-500 truncate max-w-[180px]">
+                      {totalAssignedSectionsCount > 0
+                        ? `${assignedCoursesState.length} Subjects (${totalAssignedSectionsCount} Sections)`
+                        : 'Assign Sections A1, A2, B'}
+                    </p>
+                  </div>
                 </button>
               </div>
-            </form>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-5">
+              {/* === STEP 1: PERSONAL DETAILS === */}
+              {teacherWizardStep === 1 && (
+                <form id="teacher-step-1" onSubmit={handleStep1Next} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Faculty Full Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Dr. Muhammad Usman"
+                      value={tName}
+                      onChange={(e) => setTName(e.target.value)}
+                      className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Phone Number (Used as Faculty Login User ID) <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. 03001234567"
+                        value={tPhone}
+                        onChange={(e) => setTPhone(e.target.value)}
+                        className="w-full text-xs font-mono font-bold pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      />
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      The teacher will enter this phone number into the "User ID" login field to access their portal.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Official Email Address
+                    </label>
+                    <input
+                      type="email"
+                      placeholder="usman@college.edu (Optional - auto-generated if left blank)"
+                      value={tEmail}
+                      onChange={(e) => setTEmail(e.target.value)}
+                      className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Initial Password <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                      <input
+                        type="password"
+                        required
+                        placeholder="e.g. teacher123"
+                        value={tPassword}
+                        onChange={(e) => setTPassword(e.target.value)}
+                        className="w-full text-xs font-medium pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 flex items-start gap-3">
+                    <ShieldCheck className="w-5 h-5 text-purple-700 mt-0.5 flex-shrink-0" />
+                    <div className="text-xs text-purple-900">
+                      <p className="font-bold">Next Step: Course & Section Allocation Matrix</p>
+                      <p className="text-slate-600 mt-0.5">
+                        In the next step, you will select which subjects and sections (A1, A2, and/or B) across semesters 1 to 8 this teacher will teach.
+                      </p>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {/* === STEP 2: COURSE & SECTION MATRIX === */}
+              {teacherWizardStep === 2 && (
+                <div className="space-y-4">
+                  {/* Semester Selector Bar */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-bold text-slate-700">
+                        Select Semester to Allocate Courses:
+                      </span>
+                      <span className="text-[11px] font-semibold text-purple-700">
+                        Active Semester: {tMatrixSemester}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                      {([1, 2, 3, 4, 5, 6, 7, 8] as SemesterNumber[]).map((sem) => {
+                        const count = getSemesterAssignedCount(sem);
+                        return (
+                          <button
+                            type="button"
+                            key={sem}
+                            onClick={() => setTMatrixSemester(sem)}
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition flex-shrink-0 ${
+                              tMatrixSemester === sem
+                                ? 'bg-purple-700 text-white shadow-sm'
+                                : count > 0
+                                ? 'bg-purple-100 text-purple-800 border border-purple-200'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            <span>Sem {sem}</span>
+                            {count > 0 && (
+                              <span
+                                className={`w-4 h-4 rounded-full text-[10px] font-extrabold flex items-center justify-center ${
+                                  tMatrixSemester === sem
+                                    ? 'bg-white text-purple-800'
+                                    : 'bg-purple-700 text-white'
+                                }`}
+                              >
+                                {count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Subject List for this Semester */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                        Semester {tMatrixSemester} Subjects ({subjects.filter((s) => s.semester === tMatrixSemester).length})
+                      </h4>
+                      <span className="text-[11px] text-slate-400">
+                        Select sections for {tName || 'this teacher'} (same or different sections)
+                      </span>
+                    </div>
+
+                    {subjects.filter((s) => s.semester === tMatrixSemester).length === 0 ? (
+                      <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-500">
+                        No subjects found in Semester {tMatrixSemester}. Add subjects to curriculum first.
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        {subjects
+                          .filter((s) => s.semester === tMatrixSemester)
+                          .map((subject) => {
+                            const assignedSecs = getAssignedSectionsForSubject(subject.id);
+                            const isAllSelected = assignedSecs.length === 3;
+
+                            return (
+                              <div
+                                key={subject.id}
+                                className={`p-3.5 rounded-2xl border transition-all ${
+                                  assignedSecs.length > 0
+                                    ? 'bg-purple-50/60 border-purple-200 shadow-xs'
+                                    : 'bg-slate-50/70 border-slate-200/80 hover:bg-slate-50'
+                                }`}
+                              >
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                  {/* Subject Info */}
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-mono text-xs font-extrabold text-purple-700 bg-purple-100/80 px-2 py-0.5 rounded-md">
+                                        {subject.code}
+                                      </span>
+                                      <span className="text-xs font-extrabold text-slate-900">
+                                        {subject.name}
+                                      </span>
+                                      <span className="text-[11px] text-slate-400">
+                                        ({subject.creditHours} Cr. Hrs)
+                                      </span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 mt-0.5 line-clamp-1">
+                                      {subject.description}
+                                    </p>
+                                  </div>
+
+                                  {/* Section Toggles: A1, A2, B & All */}
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    {(['A1', 'A2', 'B'] as Section[]).map((sec) => {
+                                      const isSelected = assignedSecs.includes(sec);
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={sec}
+                                          onClick={() => toggleTeacherSection(subject, sec)}
+                                          className={`px-3 py-1.5 rounded-xl text-xs font-bold border transition-all flex items-center gap-1 ${
+                                            isSelected
+                                              ? 'bg-purple-700 text-white border-purple-700 shadow-xs'
+                                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                                          }`}
+                                        >
+                                          {isSelected ? '✓ ' : ''}Sec {sec}
+                                        </button>
+                                      );
+                                    })}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => toggleAllSectionsForSubject(subject)}
+                                      className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition-all ${
+                                        isAllSelected
+                                          ? 'bg-emerald-600 text-white border-emerald-600'
+                                          : 'bg-slate-200/70 text-slate-700 border-transparent hover:bg-slate-300'
+                                      }`}
+                                    >
+                                      {isAllSelected ? '✓ All Sections' : 'All Sections'}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Summary of All Selected Course Assignments */}
+                  <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        Assigned Teaching Load Summary ({assignedCoursesState.length} Subjects, {totalAssignedSectionsCount} Sections):
+                      </span>
+                      {assignedCoursesState.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setAssignedCoursesState([])}
+                          className="text-[11px] font-bold text-rose-600 hover:underline"
+                        >
+                          Clear All
+                        </button>
+                      )}
+                    </div>
+
+                    {assignedCoursesState.length === 0 ? (
+                      <p className="text-xs text-slate-400 italic">
+                        No courses or sections selected yet. Click the Section buttons (A1, A2, B) above to allocate classes to this instructor.
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        {assignedCoursesState.map((c) => (
+                          <span
+                            key={c.subjectId}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-100 text-purple-900 border border-purple-200 text-xs font-bold"
+                          >
+                            <span>{c.subjectCode}</span>
+                            <span className="text-purple-600 font-medium">(Sem {c.semester})</span>
+                            <span className="bg-purple-200/80 px-1.5 py-0.5 rounded text-[11px] font-mono text-purple-950">
+                              {c.sections.join(', ')}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => removeAssignedCourse(c.subjectId)}
+                              className="text-purple-400 hover:text-rose-600 ml-1 font-bold"
+                              title="Remove course"
+                            >
+                              ✕
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between flex-shrink-0">
+              {teacherWizardStep === 1 ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddTeacherModal(false)}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/60 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleStep1Next}
+                    className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-purple-700 hover:bg-purple-800 shadow-md shadow-purple-900/20 transition"
+                  >
+                    Next: Assign Courses & Sections
+                    <ArrowRight className="w-4 h-4" />
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setTeacherWizardStep(1)}
+                    className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 bg-slate-200/80 hover:bg-slate-300 transition"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to Personal Details
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowAddTeacherModal(false)}
+                      className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/60 transition"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCreateTeacher}
+                      className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-900/20 transition"
+                    >
+                      <UserPlus className="w-4 h-4" />
+                      Save & Create Faculty Account
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

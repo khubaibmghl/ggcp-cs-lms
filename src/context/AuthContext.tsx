@@ -28,9 +28,10 @@ interface AuthContextType {
     phone: string;
     email: string;
     password: string;
-    taughtSemester: SemesterNumber;
-    taughtSubjectId: string;
-    taughtSubjectName: string;
+    assignedCourses: import('@/types').TeacherCourseAssignment[];
+    taughtSemester?: SemesterNumber;
+    taughtSubjectId?: string;
+    taughtSubjectName?: string;
   }) => User;
   approveTeacher: (teacherId: string) => void;
   rejectTeacher: (teacherId: string) => void;
@@ -116,7 +117,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!found) {
       return {
         success: false,
-        message: 'Account not found. Please verify your Student ID, Phone Number, or Username.',
+        message: 'Invalid User ID or password.',
       };
     }
 
@@ -125,7 +126,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!isPassValid) {
       return {
         success: false,
-        message: 'Incorrect password. Please try again.',
+        message: 'Invalid User ID or password.',
       };
     }
 
@@ -169,28 +170,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return { user: newUser, generatedLoginId };
   };
 
-  // Admin Adds/Creates Teacher Account
+  // Admin Adds/Creates Teacher Account with 2-Step Multi-Course & Multi-Section Mapping
   const createTeacherByAdmin = (data: {
     name: string;
     phone: string;
     email: string;
     password: string;
-    taughtSemester: SemesterNumber;
-    taughtSubjectId: string;
-    taughtSubjectName: string;
+    assignedCourses: import('@/types').TeacherCourseAssignment[];
+    taughtSemester?: SemesterNumber;
+    taughtSubjectId?: string;
+    taughtSubjectName?: string;
   }): User => {
+    // Generate summarized taught subject string
+    const summary = data.assignedCourses.length > 0
+      ? data.assignedCourses.map((c) => `${c.subjectCode} (${c.sections.join(', ')})`).join(', ')
+      : data.taughtSubjectName || 'General Faculty';
+
+    const primarySem = data.assignedCourses[0]?.semester || data.taughtSemester || 1;
+    const primarySubId = data.assignedCourses[0]?.subjectId || data.taughtSubjectId;
+
     const newUser: User = {
       id: `usr-teach-${Date.now()}`,
       loginId: data.phone.trim(),
       phone: data.phone.trim(),
       name: data.name.trim(),
-      email: data.email.trim(),
+      email: data.email.trim() || `${data.phone.trim()}@college.edu`,
       password: data.password.trim(),
       role: 'teacher',
       status: 'approved', // Pre-approved when created directly by the admin
-      taughtSemester: data.taughtSemester,
-      taughtSubjectId: data.taughtSubjectId,
-      taughtSubjectName: data.taughtSubjectName,
+      taughtSemester: primarySem,
+      taughtSubjectId: primarySubId,
+      taughtSubjectName: summary,
+      assignedCourses: data.assignedCourses,
       avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${data.name}`,
       createdAt: new Date().toISOString(),
     };

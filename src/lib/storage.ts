@@ -40,17 +40,30 @@ class LocalDataStore {
 
   init(): void {
     if (!this.isClient) return;
-    if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
-      this.set(STORAGE_KEYS.USERS, INITIAL_USERS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.SUBJECTS)) {
+
+    // Version key to auto-update catalog when official workload allocation changes
+    const CURRICULUM_VERSION = 'v4_fall_official_odd_semesters';
+    const currentVersion = localStorage.getItem('college_lms_curriculum_version');
+
+    if (currentVersion !== CURRICULUM_VERSION) {
+      // Overwrite subjects, users and assignments with the official curriculum and workload allocation
       this.set(STORAGE_KEYS.SUBJECTS, INITIAL_SUBJECTS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS)) {
+      this.set(STORAGE_KEYS.USERS, INITIAL_USERS);
       this.set(STORAGE_KEYS.ASSIGNMENTS, INITIAL_ASSIGNMENTS);
-    }
-    if (!localStorage.getItem(STORAGE_KEYS.SUBMISSIONS)) {
-      this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
+      localStorage.setItem('college_lms_curriculum_version', CURRICULUM_VERSION);
+    } else {
+      if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
+        this.set(STORAGE_KEYS.USERS, INITIAL_USERS);
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.SUBJECTS)) {
+        this.set(STORAGE_KEYS.SUBJECTS, INITIAL_SUBJECTS);
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS)) {
+        this.set(STORAGE_KEYS.ASSIGNMENTS, INITIAL_ASSIGNMENTS);
+      }
+      if (!localStorage.getItem(STORAGE_KEYS.SUBMISSIONS)) {
+        this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
+      }
     }
   }
 

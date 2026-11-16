@@ -15,6 +15,14 @@ export interface Subject {
   description: string;
 }
 
+export interface TeacherCourseAssignment {
+  subjectId: string;
+  subjectCode: string;
+  subjectName: string;
+  semester: SemesterNumber;
+  sections: Section[]; // e.g. ['A1', 'A2', 'B'] or subset
+}
+
 export interface User {
   id: string;
   loginId: string; // System-generated Student ID (e.g. BCS26-001) or Admin username
@@ -30,6 +38,7 @@ export interface User {
   taughtSemester?: SemesterNumber;
   taughtSubjectId?: string;
   taughtSubjectName?: string;
+  assignedCourses?: TeacherCourseAssignment[]; // Multi-subject and section mapping
   // Student-specific fields:
   rollNumber?: number; // 1 to N
   semester?: SemesterNumber;

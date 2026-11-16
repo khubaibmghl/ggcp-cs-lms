@@ -146,13 +146,13 @@ export const LoginPage: React.FC = () => {
               <form onSubmit={handleLoginSubmit} className="space-y-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    User ID / Phone
+                    User ID
                   </label>
                   <div className="relative">
                     <input
                       type="text"
                       required
-                      placeholder="e.g. BCS3-A1-001, 03001234567, or admin"
+                      placeholder="User ID"
                       value={identifier}
                       onChange={(e) => setIdentifier(e.target.value)}
                       className="w-full text-xs font-medium pl-10 pr-3.5 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"

@@ -1,101 +1,316 @@
 import { Subject, User, Assignment, Submission } from '@/types';
 
 export const INITIAL_SUBJECTS: Subject[] = [
+  // --- 1st Semester (BS Computer Science - Fall) ---
   {
-    id: 'sub-cs101',
-    code: 'CS101',
+    id: 'sub-ge-160a',
+    code: 'GE-160A',
+    name: 'Applications of Information & Comm. Tech',
+    semester: 1,
+    creditHours: 3,
+    description: 'Foundations of ICT, digital computing architectures, office applications, and computer communications.',
+  },
+  {
+    id: 'sub-ge-161',
+    code: 'GE-161',
+    name: 'Discrete Structures',
+    semester: 1,
+    creditHours: 3,
+    description: 'Propositional and predicate logic, set theory, functions, mathematical induction, relations, and graphs.',
+  },
+  {
+    id: 'sub-ge-162-s1',
+    code: 'GE-162',
+    name: 'Functional English',
+    semester: 1,
+    creditHours: 3,
+    description: 'Grammar mechanics, academic reading comprehension, professional vocabulary, and oral communication skills.',
+  },
+  {
+    id: 'sub-ge-163',
+    code: 'GE-163',
+    name: 'Introduction to Economics',
+    semester: 1,
+    creditHours: 3,
+    description: 'Principles of micro and macroeconomics, market dynamics, fiscal policies, and computational economics.',
+  },
+  {
+    id: 'sub-ge-166',
+    code: 'GE-166',
+    name: 'Pakistan Studies',
+    semester: 1,
+    creditHours: 2,
+    description: 'Historical ideology, independence movement, constitutional development, and contemporary issues of Pakistan.',
+  },
+  {
+    id: 'sub-csc-110',
+    code: 'CSC-110',
     name: 'Programming Fundamentals',
     semester: 1,
     creditHours: 4,
-    description: 'Basics of procedural programming, variables, loops, arrays, pointers, and functions in C++.',
+    description: 'Procedural problem solving, variables, control flow, functions, arrays, pointers, and memory manipulation in C++.',
   },
   {
-    id: 'sub-cs102',
-    code: 'CS102',
-    name: 'Introduction to ICT',
+    id: 'sub-md-001',
+    code: 'MD-001',
+    name: 'Math Deficiency-I',
     semester: 1,
     creditHours: 3,
-    description: 'Computer hardware architectures, networking fundamentals, web technologies, and security basics.',
+    description: 'Fundamental algebraic techniques, trigonometry, matrices, quadratic systems, and coordinate geometry.',
   },
+
+  // --- 2nd Semester (BS Computer Science - Spring) ---
   {
-    id: 'sub-cs201',
-    code: 'CS201',
-    name: 'Object Oriented Programming',
-    semester: 2,
-    creditHours: 4,
-    description: 'Classes, objects, inheritance, polymorphism, templates, and memory management in modern C++ and Java.',
-  },
-  {
-    id: 'sub-cs202',
-    code: 'CS202',
-    name: 'Discrete Structures',
-    semester: 2,
-    creditHours: 3,
-    description: 'Set theory, propositional logic, mathematical induction, graph theory, and combinatorics for computing.',
-  },
-  {
-    id: 'sub-cs301',
-    code: 'CS301',
-    name: 'Data Structures',
-    semester: 3,
-    creditHours: 4,
-    description: 'Stacks, Queues, Linked Lists, Binary Trees, AVL Trees, Heaps, Hash Tables, and Graph traversal algorithms.',
-  },
-  {
-    id: 'sub-cs302',
-    code: 'CS302',
+    id: 'sub-cc-112',
+    code: 'CC-112',
     name: 'Digital Logic Design',
+    semester: 2,
+    creditHours: 3,
+    description: 'Boolean algebra, logic gates, combinational and sequential circuit design, flip-flops, and counters.',
+  },
+  {
+    id: 'sub-mt-102',
+    code: 'MT-102',
+    name: 'Calculus & Analytical Geometry',
+    semester: 2,
+    creditHours: 3,
+    description: 'Differential and integral calculus, limits, transcendental functions, and analytical geometry.',
+  },
+  {
+    id: 'sub-ge-104',
+    code: 'GE-104',
+    name: 'Communication & Interpersonal Skills',
+    semester: 2,
+    creditHours: 3,
+    description: 'Technical presentation, interpersonal dynamics, formal technical writing, and business correspondence.',
+  },
+
+  // --- 3rd Semester (BS Computer Science - Fall) ---
+  {
+    id: 'sub-hq-003',
+    code: 'HQ-003',
+    name: 'Tarjuma-e-Quran',
+    semester: 3,
+    creditHours: 1,
+    description: 'Translation and thematic understanding of selected Quranic Surahs and moral guidance.',
+  },
+  {
+    id: 'sub-gpst-201',
+    code: 'GPST-201',
+    name: 'Pakistan Studies',
+    semester: 3,
+    creditHours: 2,
+    description: 'Socio-political history, 1973 Constitution, foreign policy, and economic challenges of Pakistan.',
+  },
+  {
+    id: 'sub-cc-211',
+    code: 'CC-211',
+    name: 'Object Oriented Programming',
+    semester: 3,
+    creditHours: 4,
+    description: 'Object-oriented programming principles, classes, inheritance, polymorphism, templates, and exception handling.',
+  },
+  {
+    id: 'sub-cc-215',
+    code: 'CC-215',
+    name: 'Database Systems',
+    semester: 3,
+    creditHours: 4,
+    description: 'Relational data models, normalization (1NF-BCNF), complex SQL queries, transactions, and ACID principles.',
+  },
+  {
+    id: 'sub-cc-210n',
+    code: 'CC-210N',
+    name: 'Computer Organization & Assembly Language',
+    semester: 3,
+    creditHours: 4,
+    description: 'Processor architecture, register sets, machine instructions, memory addressing, and x86 assembly programming.',
+  },
+  {
+    id: 'sub-ge-162-s3',
+    code: 'GE-162',
+    name: 'Calculus & Analytical Geometry',
     semester: 3,
     creditHours: 3,
-    description: 'Boolean algebra, logic gates, combinational circuits, flip-flops, registers, counters, and state machines.',
+    description: 'Advanced calculus techniques, analytical geometry, vectors, and multivariate mathematical operations.',
   },
   {
-    id: 'sub-cs401',
-    code: 'CS401',
-    name: 'Design & Analysis of Algorithms',
-    semester: 4,
+    id: 'sub-ge-192',
+    code: 'GE-192',
+    name: 'Introduction to Management',
+    semester: 3,
     creditHours: 3,
-    description: 'Asymptotic notation, divide-and-conquer, greedy techniques, dynamic programming, and NP-completeness.',
+    description: 'Management theory, leadership, organizational culture, strategic planning, and project coordination.',
   },
   {
-    id: 'sub-cs402',
-    code: 'CS402',
-    name: 'Database Systems',
+    id: 'sub-hq-003n',
+    code: 'HQ-003N',
+    name: 'Fehm-e-Quran-I',
+    semester: 3,
+    creditHours: 1,
+    description: 'Reflective comprehension of Quranic teachings, ethical tenets, and Islamic civilization.',
+  },
+
+  // --- 4th Semester (BS Computer Science - Spring) ---
+  {
+    id: 'sub-cc-214',
+    code: 'CC-214',
+    name: 'Data Structures & Algorithms',
     semester: 4,
     creditHours: 4,
-    description: 'Relational data models, ER diagrams, normalization (1NF-BCNF), complex SQL queries, and transaction ACID properties.',
+    description: 'Linear and non-linear data structures, trees, graphs, sorting, searching, and complexity analysis.',
   },
   {
-    id: 'sub-cs501',
-    code: 'CS501',
+    id: 'sub-cc-216',
+    code: 'CC-216',
     name: 'Operating Systems',
+    semester: 4,
+    creditHours: 4,
+    description: 'Processes, CPU scheduling, thread concurrency, memory management, virtual memory, and file systems.',
+  },
+  {
+    id: 'sub-mt-202',
+    code: 'MT-202',
+    name: 'Linear Algebra',
+    semester: 4,
+    creditHours: 3,
+    description: 'Matrices, vector spaces, eigenvalues, eigenvectors, orthogonal projections, and linear transformations.',
+  },
+
+  // --- 5th Semester (BS Computer Science - Fall) ---
+  {
+    id: 'sub-cc-310',
+    code: 'CC-310',
+    name: 'Artificial Intelligence',
     semester: 5,
     creditHours: 4,
-    description: 'Process management, concurrency, semaphores, memory paging/segmentation, virtual memory, and file systems.',
+    description: 'State space search, heuristics, min-max trees, knowledge representation, expert systems, and ML foundations.',
   },
   {
-    id: 'sub-cs601',
-    code: 'CS601',
+    id: 'sub-cc-313',
+    code: 'CC-313',
+    name: 'Analysis of Algorithms',
+    semester: 5,
+    creditHours: 3,
+    description: 'Asymptotic notation, divide-and-conquer, greedy strategies, dynamic programming, and NP-completeness.',
+  },
+  {
+    id: 'sub-dc-320',
+    code: 'DC-320',
+    name: 'Theory of Automata and Formal Languages',
+    semester: 5,
+    creditHours: 3,
+    description: 'Finite automata, regular expressions, context-free grammars, pushdown automata, and Turing machines.',
+  },
+  {
+    id: 'sub-dc-321',
+    code: 'DC-321',
+    name: 'Human Computer Interaction',
+    semester: 5,
+    creditHours: 3,
+    description: 'User-centered design principles, usability inspection, interactive prototyping, UX evaluation, and interfaces.',
+  },
+  {
+    id: 'sub-dc-322',
+    code: 'DC-322',
+    name: 'Computer Architecture',
+    semester: 5,
+    creditHours: 4,
+    description: 'Instruction-level parallelism, pipelining hazards, cache hierarchies, superscalar processors, and multi-core systems.',
+  },
+  {
+    id: 'sub-ec-330',
+    code: 'EC-330',
+    name: 'Web Technologies',
+    semester: 5,
+    creditHours: 3,
+    description: 'Modern full-stack web development, HTML5/CSS3, responsive design, JavaScript/TypeScript, and RESTful APIs.',
+  },
+  {
+    id: 'sub-hq-005',
+    code: 'HQ-005',
+    name: 'Tarjuma-e-Quran',
+    semester: 5,
+    creditHours: 1,
+    description: 'Quranic studies, ethical framework, community leadership, and moral philosophy.',
+  },
+
+  // --- 6th Semester (BS Computer Science - Spring) ---
+  {
+    id: 'sub-cc-314',
+    code: 'CC-314',
     name: 'Computer Networks',
     semester: 6,
-    creditHours: 3,
-    description: 'OSI & TCP/IP layers, socket programming, routing protocols (BGP/OSPF), congestion control, and DNS.',
+    creditHours: 4,
+    description: 'OSI and TCP/IP protocol suite, IP routing, subnetting, socket programming, and transport protocols.',
   },
   {
-    id: 'sub-cs701',
-    code: 'CS701',
-    name: 'Artificial Intelligence',
+    id: 'sub-cc-316',
+    code: 'CC-316',
+    name: 'Software Engineering',
+    semester: 6,
+    creditHours: 3,
+    description: 'Software development life cycles, requirement engineering, Agile/Scrum methodologies, and design modeling.',
+  },
+
+  // --- 7th Semester (BS Computer Science - Fall) ---
+  {
+    id: 'sub-sc-342',
+    code: 'SC-342',
+    name: 'Numerical Computing',
     semester: 7,
     creditHours: 3,
-    description: 'State space search, heuristics, min-max game trees, knowledge representation, and foundational machine learning.',
+    description: 'Numerical algorithms, root-finding techniques, interpolation, numerical integration, and error estimation.',
   },
   {
-    id: 'sub-cs801',
-    code: 'CS801',
-    name: 'Final Year Project (Cap-Stone)',
+    id: 'sub-ec-431',
+    code: 'EC-431',
+    name: 'Software Project Management',
+    semester: 7,
+    creditHours: 3,
+    description: 'Software project estimation, COCOMO, scheduling, risk mitigation, resource allocation, and quality monitoring.',
+  },
+  {
+    id: 'sub-ec-432',
+    code: 'EC-432',
+    name: 'Software Quality Assurance',
+    semester: 7,
+    creditHours: 3,
+    description: 'Software testing methodologies, black-box/white-box testing, unit/integration testing, and quality standards.',
+  },
+  {
+    id: 'sub-cc-411',
+    code: 'CC-411',
+    name: 'Final Year Project - I',
+    semester: 7,
+    creditHours: 3,
+    description: 'Capstone project initiation, literature review, software requirement specification (SRS), and system architecture.',
+  },
+  {
+    id: 'sub-ge-461',
+    code: 'GE-461',
+    name: 'Technical & Business Writing',
+    semester: 7,
+    creditHours: 3,
+    description: 'Research methodology, technical proposals, executive documentation, formal reports, and professional writing.',
+  },
+
+  // --- 8th Semester (BS Computer Science - Spring) ---
+  {
+    id: 'sub-cc-412',
+    code: 'CC-412',
+    name: 'Final Year Project - II',
     semester: 8,
-    creditHours: 6,
-    description: 'Comprehensive software engineering or research project demonstrating mastery of computer science competencies.',
+    creditHours: 3,
+    description: 'Capstone project implementation, empirical testing, deployment, final thesis presentation, and defense.',
+  },
+  {
+    id: 'sub-ge-462',
+    code: 'GE-462',
+    name: 'Professional Practices & Ethics',
+    semester: 8,
+    creditHours: 3,
+    description: 'Legal considerations in IT, cyber law, intellectual property rights, data privacy, and ethical computing.',
   },
 ];
 
@@ -112,33 +327,72 @@ export const INITIAL_USERS: User[] = [
     createdAt: '2026-09-01T08:00:00Z',
   },
   {
-    id: 'usr-teach-1',
-    loginId: 'sarah',
-    name: 'Dr. Sarah Khan',
-    email: 'sarah.khan@college.edu',
+    id: 'usr-teach-khubaib',
+    loginId: '03001234567',
+    name: 'Khubaib Ahmad',
+    email: 'khubaib.ahmad@college.edu',
     password: 'teacher123',
     phone: '03001234567',
     role: 'teacher',
     status: 'approved',
-    taughtSemester: 3,
-    taughtSubjectId: 'sub-cs301',
-    taughtSubjectName: 'CS301 - Data Structures',
-    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
+    taughtSemester: 1,
+    taughtSubjectId: 'sub-csc-110',
+    taughtSubjectName: 'CSC-110 (A1, A2, B), DC-322 (A1, A2, B), CC-411 (A1, A2, B)',
+    assignedCourses: [
+      {
+        subjectId: 'sub-csc-110',
+        subjectCode: 'CSC-110',
+        subjectName: 'Programming Fundamentals',
+        semester: 1,
+        sections: ['A1', 'A2', 'B'],
+      },
+      {
+        subjectId: 'sub-dc-322',
+        subjectCode: 'DC-322',
+        subjectName: 'Computer Architecture',
+        semester: 5,
+        sections: ['A1', 'A2', 'B'],
+      },
+      {
+        subjectId: 'sub-cc-411',
+        subjectCode: 'CC-411',
+        subjectName: 'Final Year Project - I',
+        semester: 7,
+        sections: ['A1', 'A2', 'B'],
+      },
+    ],
+    avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
     createdAt: '2026-09-05T09:30:00Z',
   },
   {
-    id: 'usr-teach-2',
-    loginId: 'hamza',
-    name: 'Engr. Hamza Ali',
-    email: 'hamza.ali@college.edu',
+    id: 'usr-teach-cti-1',
+    loginId: '03017654321',
+    name: 'Faculty CTI-1',
+    email: 'cti1@college.edu',
     password: 'teacher123',
     phone: '03017654321',
     role: 'teacher',
-    status: 'pending',
-    taughtSemester: 1,
-    taughtSubjectId: 'sub-cs101',
-    taughtSubjectName: 'CS101 - Programming Fundamentals',
-    avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&auto=format&fit=crop&q=80',
+    status: 'approved',
+    taughtSemester: 3,
+    taughtSubjectId: 'sub-cc-211',
+    taughtSubjectName: 'CC-211 (A1, A2, B), CC-313 (A1, A2, B)',
+    assignedCourses: [
+      {
+        subjectId: 'sub-cc-211',
+        subjectCode: 'CC-211',
+        subjectName: 'Object Oriented Programming',
+        semester: 3,
+        sections: ['A1', 'A2', 'B'],
+      },
+      {
+        subjectId: 'sub-cc-313',
+        subjectCode: 'CC-313',
+        subjectName: 'Analysis of Algorithms',
+        semester: 5,
+        sections: ['A1', 'A2', 'B'],
+      },
+    ],
+    avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&auto=format&fit=crop&q=80',
     createdAt: '2026-11-14T11:20:00Z',
   },
   {
@@ -221,58 +475,57 @@ const futureDeadline = targetDate.toISOString().split('T')[0];
 export const INITIAL_ASSIGNMENTS: Assignment[] = [
   {
     id: 'asg-301-01',
-    teacherId: 'usr-teach-1',
-    teacherName: 'Dr. Sarah Khan',
+    teacherId: 'usr-teach-cti-1',
+    teacherName: 'Faculty CTI-1',
     semester: 3,
-    subjectId: 'sub-cs301',
-    subjectCode: 'CS301',
-    subjectName: 'Data Structures',
+    subjectId: 'sub-cc-211',
+    subjectCode: 'CC-211',
+    subjectName: 'Object Oriented Programming',
     targetSections: ['All'],
-    title: 'Assignment 01: Balanced Parentheses Checker using Stack ADT',
-    description: `Implement a robust Parentheses Checker in C++ or Python utilizing an array-based or pointer-based Stack data structure.
-Your program must validate matching pairs of parentheses: '()', '{}', and '[]'.
-Ensure to handle empty strings, mismatched closers, and premature closures. Include time and space complexity explanations in your comments or text description.`,
+    title: 'Assignment 01: Polymorphic Shape Hierarchy & Operator Overloading',
+    description: `Implement a robust class hierarchy in C++ utilizing pure virtual functions, inheritance, and overloaded stream operators.
+Ensure to handle dynamic memory allocation, deep copying, and proper virtual destructors. Include time and space complexity explanations.`,
     totalMarks: 20,
     deadlineDate: futureDeadline, // Expires at 11:59:59 PM on this date
     gradingMode: 'hybrid',
     testCases: [
       {
         id: 'tc-1',
-        input: '{[()]}',
-        expectedOutput: 'BALANCED',
+        input: 'Circle 5',
+        expectedOutput: 'Area: 78.54',
         points: 5,
       },
       {
         id: 'tc-2',
-        input: '{[(])}',
-        expectedOutput: 'NOT_BALANCED',
+        input: 'Rectangle 4 6',
+        expectedOutput: 'Area: 24.00',
         points: 5,
       },
       {
         id: 'tc-3',
-        input: '((()',
-        expectedOutput: 'NOT_BALANCED',
+        input: 'Triangle 3 4',
+        expectedOutput: 'Area: 6.00',
         points: 5,
       },
       {
         id: 'tc-4',
-        input: '{[]}',
-        expectedOutput: 'BALANCED',
+        input: 'Square 5',
+        expectedOutput: 'Area: 25.00',
         points: 5,
       },
     ],
     aiRubric: [
       {
         id: 'rub-1',
-        title: 'Stack ADT Implementation',
+        title: 'OOP Architecture & Polymorphism',
         weight: 40,
-        description: 'Proper push/pop/peek operations with memory boundary checks.',
+        description: 'Proper use of virtual base classes, inheritance, and dynamic binding.',
       },
       {
         id: 'rub-2',
-        title: 'Algorithmic Accuracy & Edge Cases',
+        title: 'Memory Management & Rule of Three',
         weight: 35,
-        description: 'Correct evaluation of nested and mismatched bracket structures.',
+        description: 'Proper copy constructors, assignment operators, and memory deallocation.',
       },
       {
         id: 'rub-3',
@@ -281,38 +534,36 @@ Ensure to handle empty strings, mismatched closers, and premature closures. Incl
         description: 'Clean indentation, descriptive identifier names, and complexity analysis.',
       },
     ],
-    resourceFileName: 'stack_starter_template.cpp',
-    resourceFileContent: `// CS301 Data Structures Starter Template
+    resourceFileName: 'oop_starter_template.cpp',
+    resourceFileContent: `// CC-211 Object Oriented Programming Starter Template
 #include <iostream>
 #include <string>
 using namespace std;
 
-bool isBalanced(string expr) {
-    // TODO: Implement using your custom Stack
-    return false;
-}
+class Shape {
+public:
+    virtual double area() const = 0;
+    virtual ~Shape() {}
+};
 
 int main() {
-    string input;
-    if (cin >> input) {
-        cout << (isBalanced(input) ? "BALANCED" : "NOT_BALANCED") << endl;
-    }
+    cout << "Enter shape details:" << endl;
     return 0;
 }`,
     createdAt: '2026-11-15T09:00:00Z',
   },
   {
     id: 'asg-301-02',
-    teacherId: 'usr-teach-1',
-    teacherName: 'Dr. Sarah Khan',
+    teacherId: 'usr-teach-cti-1',
+    teacherName: 'Faculty CTI-1',
     semester: 3,
-    subjectId: 'sub-cs301',
-    subjectCode: 'CS301',
-    subjectName: 'Data Structures',
+    subjectId: 'sub-cc-211',
+    subjectCode: 'CC-211',
+    subjectName: 'Object Oriented Programming',
     targetSections: ['A1'],
-    title: 'Assignment 02: In-place Reversal of Doubly Linked List',
-    description: `Construct a Doubly Linked List with insert, delete, and in-place pointer reversal methods.
-Draw the memory pointer changes on paper or write code with complete step-by-step comments.`,
+    title: 'Assignment 02: Template-based Generic Linked Collection',
+    description: `Construct a generic template class in C++ supporting insert, remove, and iterator traversal.
+Demonstrate with user-defined types and complete step-by-step comments.`,
     totalMarks: 15,
     deadlineDate: '2026-11-10', // Expired! Demonstrates the automatic lockout
     gradingMode: 'manual',
@@ -320,52 +571,45 @@ Draw the memory pointer changes on paper or write code with complete step-by-ste
   },
   {
     id: 'asg-501-01',
-    teacherId: 'usr-teach-1',
-    teacherName: 'Prof. Dr. Tariq Mahmood',
+    teacherId: 'usr-teach-khubaib',
+    teacherName: 'Khubaib Ahmad',
     semester: 5,
-    subjectId: 'sub-cs501',
-    subjectCode: 'CS501',
-    subjectName: 'Operating Systems',
+    subjectId: 'sub-dc-322',
+    subjectCode: 'DC-322',
+    subjectName: 'Computer Architecture',
     targetSections: ['All'],
-    title: 'Assignment 01: CPU Scheduling Simulator (FCFS, SJF & Round Robin)',
-    description: `Develop a process scheduling simulator in C++ or Python that reads process arrival times and burst times from standard input.
-Compute and display the Gantt chart sequence, Average Waiting Time (AWT), and Average Turnaround Time (ATAT).
-Your solution must handle arbitrary quantum values for Round Robin scheduling.`,
+    title: 'Assignment 01: 5-Stage MIPS Pipelining Hazard Detector & Simulator',
+    description: `Develop a pipeline simulator in C++ or Python that reads MIPS assembly instructions and detects Data Hazards (RAW, WAR, WAW) and Control Hazards.
+Compute total cycle count, CPI (Cycles Per Instruction), and stall penalties with and without forwarding.`,
     totalMarks: 20,
     deadlineDate: futureDeadline, // Locks at 11:59:59 PM (Midnight)
     gradingMode: 'hybrid',
     testCases: [
-      { id: 'tc-501-1', input: '3\nP1 0 5\nP2 1 3\nP3 2 8', expectedOutput: 'AWT: 4.33', points: 10 },
-      { id: 'tc-501-2', input: '2\nP1 0 4\nP2 0 4', expectedOutput: 'AWT: 2.00', points: 10 },
+      { id: 'tc-501-1', input: 'LW $1, 0($2)\nADD $3, $1, $4', expectedOutput: 'Stalls: 1 with forwarding', points: 10 },
+      { id: 'tc-501-2', input: 'ADD $1, $2, $3\nSUB $4, $1, $5', expectedOutput: 'Stalls: 0 with forwarding', points: 10 },
     ],
     aiRubric: [
-      { id: 'rub-501-1', title: 'Process Queue & State Management', weight: 40, description: 'Correct state transitions from Ready to Running to Terminated' },
-      { id: 'rub-501-2', title: 'Round Robin Quantum Preemption', weight: 40, description: 'Proper context switching when quantum expires' },
-      { id: 'rub-501-3', title: 'Metrics Calculation', weight: 20, description: 'Accurate AWT and ATAT formulas' },
+      { id: 'rub-501-1', title: 'Hazard Detection Unit', weight: 40, description: 'Accurate detection of read-after-write registers across EX/MEM and MEM/WB stages' },
+      { id: 'rub-501-2', title: 'Forwarding Unit Logic', weight: 40, description: 'Proper routing of operand values directly to execution stage' },
+      { id: 'rub-501-3', title: 'CPI and Performance Analysis', weight: 20, description: 'Accurate mathematical breakdown of pipeline efficiency' },
     ],
-    resourceFileName: 'cpu_scheduler_template.py',
-    resourceFileContent: `# CS501 Operating Systems Starter Template
-# Implement Process class and Scheduling algorithms
-class Process:
-    def __init__(self, pid, arrival, burst):
-        self.pid = pid
-        self.arrival = arrival
-        self.burst = burst
-        self.waiting_time = 0
-        self.turnaround_time = 0
-
-def simulate_fcfs(processes):
-    pass
+    resourceFileName: 'pipeline_simulator.py',
+    resourceFileContent: `# DC-322 Computer Architecture Starter Template
+# Implement Pipeline Register and Hazard Detection
+class PipelineSimulator:
+    def __init__(self):
+        self.cycles = 0
+        self.stalls = 0
 `,
     createdAt: '2026-11-15T10:00:00Z',
   },
   {
     id: 'asg-101-01',
-    teacherId: 'usr-teach-2',
-    teacherName: 'Engr. Hamza Ali',
+    teacherId: 'usr-teach-khubaib',
+    teacherName: 'Khubaib Ahmad',
     semester: 1,
-    subjectId: 'sub-cs101',
-    subjectCode: 'CS101',
+    subjectId: 'sub-csc-110',
+    subjectCode: 'CSC-110',
     subjectName: 'Programming Fundamentals',
     targetSections: ['All'],
     title: 'Assignment 01: Procedural Logic & Dynamic 2D Matrix Manipulation',

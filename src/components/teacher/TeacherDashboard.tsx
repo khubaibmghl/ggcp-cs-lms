@@ -170,9 +170,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
     alert(`Assignment published! It is now immediately live for all students in Semester ${targetSemester} (${targetSections.join(', ')}).`);
   };
 
-  // Filter assignments created by this teacher or in their taught subject
+  // Filter assignments created by this teacher or in their taught subject / assigned courses
+  const myAssignedSubjectIds = currentUser?.assignedCourses?.map((c) => c.subjectId) || [];
   const myAssignments = assignments.filter(
-    (a) => a.teacherId === currentUser?.id || a.subjectId === currentUser?.taughtSubjectId
+    (a) =>
+      a.teacherId === currentUser?.id ||
+      a.subjectId === currentUser?.taughtSubjectId ||
+      myAssignedSubjectIds.includes(a.subjectId)
   );
 
   return (
@@ -183,7 +187,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
           <div>
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-200 text-xs font-semibold mb-2">
               <Award className="w-4 h-4 text-purple-300" />
-              Faculty Portal • {currentUser?.taughtSubjectName || 'Data Structures'}
+              Faculty Portal • {currentUser?.assignedCourses && currentUser.assignedCourses.length > 0
+                ? currentUser.assignedCourses.map((c) => `${c.subjectCode} (${c.sections.join(', ')})`).join(' • ')
+                : currentUser?.taughtSubjectName || 'BS Computer Science'}
             </div>
             <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
               Course Assignments & Evaluation Hub
@@ -362,6 +368,60 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
             {/* --- STEP 1: Course & Semester --- */}
             {wizardStep === 1 && (
               <div className="space-y-4">
+                {currentUser?.assignedCourses && currentUser.assignedCourses.length > 0 && (
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                      Select From Your Assigned Courses:
+                    </label>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+                      {currentUser.assignedCourses.map((c) => {
+                        const isMatch = targetSubjectId === c.subjectId && targetSemester === c.semester;
+                        return (
+                          <button
+                            type="button"
+                            key={c.subjectId}
+                            onClick={() => {
+                              setTargetSubjectId(c.subjectId);
+                              setTargetSemester(c.semester);
+                              setTargetSections(c.sections.length === 3 ? ['All'] : c.sections);
+                            }}
+                            className={`p-3 rounded-2xl border text-left transition-all ${
+                              isMatch
+                                ? 'bg-purple-700 text-white border-purple-700 shadow-md'
+                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span
+                                className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${
+                                  isMatch ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
+                                }`}
+                              >
+                                {c.subjectCode}
+                              </span>
+                              <span
+                                className={`text-[10px] font-bold ${
+                                  isMatch ? 'text-purple-200' : 'text-slate-500'
+                                }`}
+                              >
+                                Sem {c.semester}
+                              </span>
+                            </div>
+                            <p className="font-bold text-xs mt-1 truncate">{c.subjectName}</p>
+                            <p
+                              className={`text-[11px] mt-0.5 font-medium ${
+                                isMatch ? 'text-purple-200' : 'text-slate-500'
+                              }`}
+                            >
+                              Sections: {c.sections.join(', ')}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
                     Select BS Computer Science Semester
@@ -412,9 +472,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
             {wizardStep === 2 && (
               <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    Target Audience / Sections in Semester {targetSemester}
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      Target Audience / Sections in Semester {targetSemester}
+                    </label>
+                    {(() => {
+                      const assignedCourseMatch = currentUser?.assignedCourses?.find(
+                        (c) => c.subjectId === targetSubjectId
+                      );
+                      if (assignedCourseMatch) {
+                        return (
+                          <span className="text-[11px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-lg">
+                            Your Assigned Sections: [{assignedCourseMatch.sections.join(', ')}]
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </div>
                   <div className="flex flex-wrap gap-2">
                     {(['All', 'A1', 'A2', 'B'] as ('All' | Section)[]).map((sec) => (
                       <button
