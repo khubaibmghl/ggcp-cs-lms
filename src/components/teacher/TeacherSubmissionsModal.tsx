@@ -94,17 +94,11 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       return;
     }
 
-    // Handle Cloudinary delivery URLs
+    // Handle Cloudinary delivery URLs directly
     let downloadUrl = data;
-    if (
-      downloadUrl.includes('cloudinary.com') &&
-      downloadUrl.includes('/image/upload/') &&
-      (downloadUrl.toLowerCase().endsWith('.pdf') ||
-        file.name?.toLowerCase().endsWith('.pdf') ||
-        file.name?.toLowerCase().endsWith('.docx') ||
-        file.name?.toLowerCase().endsWith('.doc'))
-    ) {
-      downloadUrl = downloadUrl.replace('/image/upload/', '/raw/upload/');
+    // For Cloudinary image uploads, adding fl_attachment guarantees direct browser download without 404
+    if (downloadUrl.includes('cloudinary.com') && downloadUrl.includes('/image/upload/') && !downloadUrl.includes('/fl_attachment/')) {
+      downloadUrl = downloadUrl.replace('/image/upload/', '/image/upload/fl_attachment/');
     }
 
     const a = document.createElement('a');

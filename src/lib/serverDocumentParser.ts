@@ -27,11 +27,19 @@ export async function extractDocumentText(file: {
     // 2. If remote URL is provided and no local buffer
     if (!buffer && file.url) {
       let fetchUrl = file.url;
-      // Cloudinary raw/image handling
-      if (fetchUrl.includes('cloudinary.com') && fetchUrl.includes('/image/upload/') && (fileName.endsWith('.pdf') || fileName.endsWith('.docx'))) {
-        fetchUrl = fetchUrl.replace('/image/upload/', '/raw/upload/');
+      let response = await fetch(fetchUrl);
+
+      // If failed (e.g. 404) and on Cloudinary, try the alternate resource type (image <-> raw)
+      if (!response.ok && fetchUrl.includes('cloudinary.com')) {
+        const altUrl = fetchUrl.includes('/image/upload/')
+          ? fetchUrl.replace('/image/upload/', '/raw/upload/')
+          : fetchUrl.replace('/raw/upload/', '/image/upload/');
+        const altRes = await fetch(altUrl);
+        if (altRes.ok) {
+          response = altRes;
+        }
       }
-      const response = await fetch(fetchUrl);
+
       if (response.ok) {
         const arrayBuf = await response.arrayBuffer();
         buffer = Buffer.from(arrayBuf);

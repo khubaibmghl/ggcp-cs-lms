@@ -65,6 +65,16 @@ export function computePeerPlagiarism(
     };
   }
 
+  if (peers.length === 0) {
+    return {
+      peerPlagiarismScore: 0,
+      totalComparisons: 0,
+      matchingSnippets: [],
+      summary: 'This is currently the only submission in this class. No other classmate submissions exist yet to compare against.',
+      riskLevel: 'clean',
+    };
+  }
+
   // Question shingles to exclude question prompts from peer plagiarism penalties
   const questionShingles = questionText ? createWordShingles(questionText, 4) : new Set<string>();
 
