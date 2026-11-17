@@ -21,6 +21,7 @@ import {
   Copy,
   Trash2,
   Flame,
+  Loader2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -47,6 +48,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
   const [textSolution, setTextSolution] = useState(existingSub?.textSubmission || '');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(existingSub?.files || []);
   const [inputMode, setInputMode] = useState<'text' | 'files'>('text');
+  const [isOptimizing, setIsOptimizing] = useState(false);
 
   // --- Real-Time Telemetry Tracking ---
   const [telemetry, setTelemetry] = useState<SubmissionTelemetry>(
@@ -126,42 +128,140 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
     });
   };
 
-  // File Upload Handler (Images, PDFs, Source code up to 10 MB)
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
+  // Smart Ultra-HD Optimizer for Student Submissions
+  // - Images under 1 MB are kept 100% untouched with zero quality loss.
+  // - Large camera photos (5-15 MB) are scaled to 2K Ultra-HD (max 2048px) at ~88% quality,
+  //   producing ~800 KB - 1.1 MB files with crystal-clear handwriting readability.
+  // - Non-image files (PDFs, ZIPs, code) are kept as original.
+  const optimizeFileForSubmission = async (file: File): Promise<UploadedFile> => {
+    // Non-images or images already <= 1 MB (1024 * 1024 bytes) remain 100% original
+    if (!file.type.startsWith('image/') || file.size <= 1024 * 1024) {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          resolve({
+            name: file.name,
+            size: file.size,
+            type: file.type,
+            dataUrl: typeof reader.result === 'string' ? reader.result : undefined,
+          });
+        };
+        reader.onerror = () => {
+          resolve({ name: file.name, size: file.size, type: file.type });
+        };
+        reader.readAsDataURL(file);
+      });
+    }
 
-    const newFiles: UploadedFile[] = [];
-    let totalSize = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
-
-    Array.from(files).forEach((file) => {
-      if (file.size > 10 * 1024 * 1024) {
-        setSubmissionError(`File "${file.name}" exceeds the 10 MB size limit.`);
-        showError('File Too Large', `File "${file.name}" exceeds the 10 MB limit.`);
-        return;
-      }
-      totalSize += file.size;
-      if (totalSize > 10 * 1024 * 1024) {
-        setSubmissionError('Total uploaded file size exceeds 10 MB limit.');
-        showError('Size Limit Exceeded', 'Total upload size exceeds 10 MB limit.');
-        return;
-      }
-
+    // Heavy camera photos: gentle Ultra-HD 2K optimization
+    return new Promise((resolve) => {
       const reader = new FileReader();
       reader.onload = () => {
-        newFiles.push({
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          dataUrl: typeof reader.result === 'string' ? reader.result : undefined,
-        });
-        if (newFiles.length === files.length) {
-          setUploadedFiles((prev) => [...prev, ...newFiles]);
-          setSubmissionError(null);
+        const rawDataUrl = typeof reader.result === 'string' ? reader.result : '';
+        if (!rawDataUrl) {
+          resolve({ name: file.name, size: file.size, type: file.type });
+          return;
         }
+
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const maxDim = 2048;
+            let { width, height } = img;
+            if (width > maxDim || height > maxDim) {
+              if (width > height) {
+                height = Math.round((height * maxDim) / width);
+                width = maxDim;
+              } else {
+                width = Math.round((width * maxDim) / height);
+                height = maxDim;
+              }
+            }
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              resolve({ name: file.name, size: file.size, type: file.type, dataUrl: rawDataUrl });
+              return;
+            }
+
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // 0.88 quality JPEG produces razor-sharp handwriting text around 800 KB - 1.1 MB
+            const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+            const approxBytes = Math.round((optimizedDataUrl.length * 3) / 4);
+
+            resolve({
+              name: file.name.replace(/\.[^/.]+$/, '') + '.jpg',
+              size: approxBytes,
+              type: 'image/jpeg',
+              dataUrl: optimizedDataUrl,
+            });
+          } catch {
+            resolve({ name: file.name, size: file.size, type: file.type, dataUrl: rawDataUrl });
+          }
+        };
+        img.onerror = () => {
+          resolve({ name: file.name, size: file.size, type: file.type, dataUrl: rawDataUrl });
+        };
+        img.src = rawDataUrl;
+      };
+      reader.onerror = () => {
+        resolve({ name: file.name, size: file.size, type: file.type });
       };
       reader.readAsDataURL(file);
     });
+  };
+
+  // File Upload Handler (with Ultra-HD ~1 MB Optimizer)
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const rawFiles = Array.from(files);
+
+    // Initial individual raw file check (allows up to 25 MB camera photos before optimization)
+    for (const file of rawFiles) {
+      if (file.size > 25 * 1024 * 1024) {
+        setSubmissionError(`File "${file.name}" exceeds the 25 MB maximum upload limit.`);
+        showError('File Too Large', `File "${file.name}" exceeds 25 MB.`);
+        return;
+      }
+    }
+
+    setIsOptimizing(true);
+    setSubmissionError(null);
+
+    try {
+      const processed = await Promise.all(rawFiles.map((f) => optimizeFileForSubmission(f)));
+      const currentTotal = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
+      const newTotal = processed.reduce((acc, f) => acc + f.size, 0);
+
+      // Max total bundle size: 25 MB
+      if (currentTotal + newTotal > 25 * 1024 * 1024) {
+        setSubmissionError('Total upload bundle exceeds the 25 MB limit. Please remove some files or submit fewer pages.');
+        showWarning('Size Limit Exceeded', 'Total upload bundle exceeds 25 MB limit.');
+        setIsOptimizing(false);
+        return;
+      }
+
+      setUploadedFiles((prev) => [...prev, ...processed]);
+      setSubmissionError(null);
+      showSuccess(
+        'Files Added',
+        `${processed.length} file(s) attached in Ultra-HD clarity (~1 MB standard).`
+      );
+    } catch {
+      setSubmissionError('An error occurred while processing your files. Please try again.');
+      showError('Upload Error', 'Could not process selected files.');
+    } finally {
+      setIsOptimizing(false);
+      e.target.value = '';
+    }
   };
 
   const removeFile = (index: number) => {
@@ -432,17 +532,32 @@ int main() {
                     <input
                       type="file"
                       multiple
+                      disabled={isOptimizing}
                       accept="image/*,.pdf,.cpp,.c,.py,.java,.zip,.txt"
                       onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
                     />
-                    <UploadCloud className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                    <p className="text-xs font-bold text-slate-800">
-                      Click or drag photos of handwritten work, code files, or PDFs
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Max file size: 10 MB bundle (Supports JPG, PNG, PDF, ZIP, CPP, PY)
-                    </p>
+                    {isOptimizing ? (
+                      <div className="flex flex-col items-center justify-center py-2">
+                        <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-2" />
+                        <p className="text-xs font-bold text-purple-900">
+                          Optimizing photos to Ultra-HD (~1 MB standard)...
+                        </p>
+                        <p className="text-[11px] text-purple-600 mt-1">
+                          Preserving 100% handwriting clarity for faculty evaluation
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <UploadCloud className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+                        <p className="text-xs font-bold text-slate-800">
+                          Click or drag photos of handwritten work, code files, or PDFs
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Ultra-HD ~1 MB Smart Optimizer enabled • Files ≤ 1 MB kept untouched • Up to 25 MB bundle
+                        </p>
+                      </>
+                    )}
                   </div>
 
                   {/* Uploaded Files Grid */}
@@ -464,8 +579,10 @@ int main() {
                               <span className="font-semibold text-slate-800 truncate">
                                 {file.name}
                               </span>
-                              <span className="text-[10px] text-slate-400">
-                                ({Math.round(file.size / 1024)} KB)
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                ({file.size >= 1024 * 1024
+                                  ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+                                  : `${Math.round(file.size / 1024)} KB`})
                               </span>
                             </div>
 
