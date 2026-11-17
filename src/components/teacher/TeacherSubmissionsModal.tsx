@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { dataStore } from '@/lib/storage';
 import { Assignment, Submission, Section, UploadedFile } from '@/types';
+import { computePeerPlagiarism, PlagiarismScanResult } from '@/lib/plagiarismEngine';
 import {
   FileText,
   CheckCircle,
@@ -21,6 +22,11 @@ import {
   Activity,
   ExternalLink,
   Download,
+  Sparkles,
+  CheckCheck,
+  CheckCircle2,
+  BookOpen,
+  HelpCircle,
   Image as ImageIcon,
 } from 'lucide-react';
 
@@ -38,6 +44,16 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [gradingScore, setGradingScore] = useState<number | string>('');
   const [gradingFeedback, setGradingFeedback] = useState<string>('');
+
+  // Plagiarism Scan State
+  const [scanningSubId, setScanningSubId] = useState<string | null>(null);
+  const [plagiarismReport, setPlagiarismReport] = useState<PlagiarismScanResult | null>(null);
+  const [plagiarismTargetSub, setPlagiarismTargetSub] = useState<Submission | null>(null);
+
+  // Automated Correction Evaluation State
+  const [evaluatingSubId, setEvaluatingSubId] = useState<string | null>(null);
+  const [evaluationReport, setEvaluationReport] = useState<any | null>(null);
+  const [evaluatingSub, setEvaluatingSub] = useState<Submission | null>(null);
 
   const allSubmissions = dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id);
 
@@ -60,7 +76,6 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
   const handleOpenGrading = (sub: Submission) => {
     setSelectedSubmission(sub);
-    // Only use existing instructor score if already graded; never pre-fill fake AI score
     setGradingScore(sub.score !== undefined ? sub.score : '');
     setGradingFeedback(sub.teacherFeedback || '');
   };
@@ -113,6 +128,140 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
     };
     dataStore.upsertSubmission(updated);
     setSelectedSubmission(null);
+  };
+
+  // --- 1. REAL PEER PLAGIARISM CHECKER ---
+  const handleScanPlagiarism = async (targetSub: Submission) => {
+    setScanningSubId(targetSub.id);
+    try {
+      // 1. Extract text from target student's submission
+      let targetText = targetSub.textSubmission || '';
+      if (!targetText && targetSub.files?.[0]) {
+        const res = await fetch('/api/extract-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: targetSub.files[0] }),
+        });
+        const d = await res.json();
+        if (d.success) targetText = d.text;
+      }
+
+      // 2. Extract text from peer submissions in this assignment
+      const peers: { rollNumber: number; name: string; text: string }[] = [];
+      for (const peer of allSubmissions) {
+        if (peer.id === targetSub.id) continue;
+        let peerText = peer.textSubmission || '';
+        if (!peerText && peer.files?.[0]) {
+          const res = await fetch('/api/extract-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: peer.files[0] }),
+          });
+          const d = await res.json();
+          if (d.success) peerText = d.text;
+        }
+        if (peerText) {
+          peers.push({
+            rollNumber: peer.studentRollNumber,
+            name: peer.studentName,
+            text: peerText,
+          });
+        }
+      }
+
+      // 3. Question paper text
+      const questionText = assignment.description || assignment.title;
+
+      // 4. Run real mathematical shingle similarity comparison
+      const scanResult = computePeerPlagiarism(targetText, peers, questionText);
+
+      // 5. Update submission integrity report in dataStore
+      const updatedSub: Submission = {
+        ...targetSub,
+        integrityReport: {
+          ...targetSub.integrityReport,
+          peerPlagiarismScore: scanResult.peerPlagiarismScore,
+          matchedWithRollNumber: scanResult.matchedWithRollNumber,
+          aiReasoning: scanResult.summary,
+        },
+      };
+      dataStore.upsertSubmission(updatedSub);
+
+      setPlagiarismTargetSub(updatedSub);
+      setPlagiarismReport(scanResult);
+    } catch (err) {
+      console.error('Error scanning peer plagiarism:', err);
+    } finally {
+      setScanningSubId(null);
+    }
+  };
+
+  // --- 2. REAL QUESTION-AWARE AUTOMATED ASSIGNMENT EVALUATION ---
+  const handleCheckCorrection = async (sub: Submission) => {
+    setEvaluatingSubId(sub.id);
+    setEvaluatingSub(sub);
+    try {
+      const questionFilePayload = assignment.resourceFileContent
+        ? {
+            name: assignment.resourceFileName || 'Question_Paper.pdf',
+            dataUrl: assignment.resourceFileContent,
+          }
+        : null;
+
+      const solutionFilePayload = sub.files?.[0]
+        ? {
+            name: sub.files[0].name,
+            dataUrl: sub.files[0].dataUrl,
+            url: sub.files[0].url,
+          }
+        : null;
+
+      const res = await fetch('/api/evaluate-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          questionFile: questionFilePayload,
+          solutionFile: solutionFilePayload,
+          questionTextOverride: assignment.description,
+          solutionTextOverride: sub.textSubmission,
+          assignment: {
+            title: assignment.title,
+            subjectCode: assignment.subjectCode,
+            subjectName: assignment.subjectName,
+            totalMarks: assignment.totalMarks,
+          },
+          student: {
+            name: sub.studentName,
+            rollNumber: sub.studentRollNumber,
+            section: sub.studentSection,
+          },
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.evaluation) {
+        setEvaluationReport(data.evaluation);
+      } else {
+        alert(data.error || 'Evaluation could not be performed on this document.');
+      }
+    } catch (err) {
+      console.error('Error in automated evaluation:', err);
+    } finally {
+      setEvaluatingSubId(null);
+    }
+  };
+
+  const handleApplyEvaluatedGrade = () => {
+    if (!evaluatingSub || !evaluationReport) return;
+    const updated: Submission = {
+      ...evaluatingSub,
+      status: 'graded',
+      score: evaluationReport.overallScore,
+      teacherFeedback: evaluationReport.instructorFeedbackDraft,
+    };
+    dataStore.upsertSubmission(updated);
+    setEvaluationReport(null);
+    setEvaluatingSub(null);
   };
 
   return (
@@ -193,7 +342,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                   return (
                     <div
                       key={sub.id}
-                      className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-purple-300 hover:shadow-xs transition space-y-2"
+                      className="p-4 rounded-2xl border border-slate-200 bg-white hover:border-purple-300 hover:shadow-xs transition space-y-3"
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
@@ -225,12 +374,12 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                       </div>
 
                       {/* Integrity Badges */}
-                      <div className="flex flex-wrap items-center gap-2 pt-1 text-[10px] font-bold">
+                      <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
                         <span
                           className={`px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                            plag > 50
+                            plag > 35
                               ? 'bg-rose-100 text-rose-800'
-                              : plag > 20
+                              : plag > 15
                               ? 'bg-amber-100 text-amber-800'
                               : 'bg-emerald-100 text-emerald-800'
                           }`}
@@ -254,18 +403,73 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                         )}
                       </div>
 
-                      {/* Action buttons */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                        <span className="text-slate-400 text-[11px]">
-                          {sub.textSubmission ? 'Code/Text' : ''}{' '}
-                          {sub.files?.length > 0 ? `+ ${sub.files.length} attachment(s)` : ''}
-                        </span>
+                      {/* === ACTION BUTTONS TOOLBAR AGAINST EACH SUBMISSION === */}
+                      <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* 1. VIEW / DOWNLOAD FILE BUTTON */}
+                          {sub.files && sub.files.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadStudentFile(sub.files[0])}
+                              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[11px] flex items-center gap-1 transition"
+                              title="Download or open student submission file"
+                            >
+                              <Download className="w-3.5 h-3.5 text-slate-600" />
+                              View File
+                            </button>
+                          )}
 
+                          {/* 2. CHECK PLAGIARISM BUTTON */}
+                          <button
+                            type="button"
+                            onClick={() => handleScanPlagiarism(sub)}
+                            disabled={scanningSubId === sub.id}
+                            className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-[11px] flex items-center gap-1 transition border border-purple-200 disabled:opacity-50"
+                            title="Scan against all peer submissions in this class"
+                          >
+                            {scanningSubId === sub.id ? (
+                              <>
+                                <span className="w-3 h-3 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
+                                Scanning Peers...
+                              </>
+                            ) : (
+                              <>
+                                <ShieldAlert className="w-3.5 h-3.5 text-purple-600" />
+                                Check Plagiarism
+                              </>
+                            )}
+                          </button>
+
+                          {/* 3. CHECK ASSIGNMENT CORRECTION BUTTON */}
+                          <button
+                            type="button"
+                            onClick={() => handleCheckCorrection(sub)}
+                            disabled={evaluatingSubId === sub.id}
+                            className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[11px] flex items-center gap-1 transition border border-emerald-200 disabled:opacity-50 shadow-2xs"
+                            title="Automated correction against the official assignment question paper"
+                          >
+                            {evaluatingSubId === sub.id ? (
+                              <>
+                                <span className="w-3 h-3 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin" />
+                                Evaluating...
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                                Check Correction
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* 4. GRADE & REVIEW SUBMISSION BUTTON */}
                         <button
+                          type="button"
                           onClick={() => handleOpenGrading(sub)}
-                          className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs"
+                          className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1"
                         >
-                          Grade & Review Submission
+                          <Award className="w-3.5 h-3.5" />
+                          Grade & Review
                         </button>
                       </div>
                     </div>
@@ -320,7 +524,297 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
           </div>
         </div>
 
-        {/* --- DETAILED GRADING & INTEGRITY MODAL DRAWER --- */}
+        {/* ========================================================================= */}
+        {/* --- MODAL 1: REAL PEER PLAGIARISM AUDIT REPORT MODAL ---                  */}
+        {/* ========================================================================= */}
+        {plagiarismReport && plagiarismTargetSub && (
+          <div className="fixed inset-0 z-70 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 sm:p-8 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-5">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">
+                    Peer Plagiarism Investigation Report
+                  </span>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    Roll #{plagiarismTargetSub.studentRollNumber} — {plagiarismTargetSub.studentName} (Sec {plagiarismTargetSub.studentSection})
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setPlagiarismReport(null);
+                    setPlagiarismTargetSub(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-700 font-bold p-1 text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Plagiarism Score Summary Banner */}
+              <div
+                className={`p-4 rounded-2xl border flex items-center justify-between ${
+                  plagiarismReport.riskLevel === 'critical'
+                    ? 'bg-rose-50 border-rose-200 text-rose-900'
+                    : plagiarismReport.riskLevel === 'moderate'
+                    ? 'bg-amber-50 border-amber-200 text-amber-900'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-12 h-12 rounded-xl flex items-center justify-center font-mono font-black text-lg ${
+                      plagiarismReport.riskLevel === 'critical'
+                        ? 'bg-rose-600 text-white'
+                        : plagiarismReport.riskLevel === 'moderate'
+                        ? 'bg-amber-500 text-white'
+                        : 'bg-emerald-600 text-white'
+                    }`}
+                  >
+                    {plagiarismReport.peerPlagiarismScore}%
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-extrabold">
+                      {plagiarismReport.riskLevel === 'critical'
+                        ? 'High Peer Similarity Detected'
+                        : plagiarismReport.riskLevel === 'moderate'
+                        ? 'Moderate Overlap Detected'
+                        : 'Authentic & Original Work'}
+                    </h4>
+                    <p className="text-xs opacity-90 mt-0.5">{plagiarismReport.summary}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Matched Peer Info */}
+              {plagiarismReport.matchedWithRollNumber && (
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                  <span className="font-bold text-slate-700">Highest Overlapping Peer Submission:</span>{' '}
+                  <span className="font-bold text-purple-700">
+                    Roll #{plagiarismReport.matchedWithRollNumber} ({plagiarismReport.matchedWithName})
+                  </span>
+                </div>
+              )}
+
+              {/* Matching Snippets Excerpts */}
+              <div>
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                  Matching Sentence Analysis:
+                </h4>
+                {plagiarismReport.matchingSnippets.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic p-3 bg-slate-50 rounded-xl border border-slate-200">
+                    No verbatim sentence collisions detected against classmates.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {plagiarismReport.matchingSnippets.map((snip, idx) => (
+                      <div key={idx} className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 text-xs space-y-1">
+                        <div className="flex items-center justify-between text-[11px] text-rose-800 font-bold">
+                          <span>Snippet #{idx + 1}</span>
+                          <span>Overlaps with Roll #{snip.peerRollNumber} ({snip.peerStudentName})</span>
+                        </div>
+                        <p className="text-slate-800 font-mono text-[11px] bg-white p-2 rounded-lg border border-rose-100">
+                          &ldquo;{snip.studentSnippet}&rdquo;
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPlagiarismReport(null);
+                    setPlagiarismTargetSub(null);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs"
+                >
+                  Close Report
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================================= */}
+        {/* --- MODAL 2: AUTOMATED QUESTION-AWARE ASSIGNMENT EVALUATION REPORT ---     */}
+        {/* ========================================================================= */}
+        {evaluationReport && evaluatingSub && (
+          <div className="fixed inset-0 z-70 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-6">
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md uppercase">
+                      Automated Assignment Correction
+                    </span>
+                    <span className="text-[10px] font-medium text-slate-500">
+                      Engine: {evaluationReport.aiEngineUsed}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-extrabold text-slate-900">
+                    Roll #{evaluatingSub.studentRollNumber} — {evaluatingSub.studentName} (Sec {evaluatingSub.studentSection})
+                  </h3>
+                </div>
+                <button
+                  onClick={() => {
+                    setEvaluationReport(null);
+                    setEvaluatingSub(null);
+                  }}
+                  className="text-slate-400 hover:text-slate-700 font-bold p-1 text-sm"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Recommended Score Banner */}
+              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900 text-white rounded-2xl p-5 flex items-center justify-between shadow-lg">
+                <div>
+                  <span className="text-xs font-semibold text-emerald-200 block uppercase tracking-wider">
+                    Recommended Grade
+                  </span>
+                  <div className="flex items-baseline gap-2 mt-1">
+                    <span className="text-3xl font-black">{evaluationReport.overallScore}</span>
+                    <span className="text-base text-emerald-200">/ {assignment.totalMarks} Marks</span>
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 font-bold ml-2">
+                      {evaluationReport.percentage}% • {evaluationReport.status}
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleApplyEvaluatedGrade}
+                  className="px-5 py-2.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 font-extrabold text-xs shadow-md transition flex items-center gap-1.5"
+                >
+                  <CheckCheck className="w-4 h-4 text-emerald-600" />
+                  Apply Score & Feedback
+                </button>
+              </div>
+
+              {/* Question-by-Question Itemized Scorecard */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <BookOpen className="w-4 h-4 text-emerald-600" />
+                  Question-by-Question Analysis ({evaluationReport.questionBreakdown?.length || 0} Questions Evaluated)
+                </h4>
+
+                <div className="space-y-2.5">
+                  {evaluationReport.questionBreakdown?.map((q: any, i: number) => (
+                    <div
+                      key={i}
+                      className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 hover:border-emerald-300 transition"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-900">{q.questionNumber}: {q.prompt}</span>
+                        <span
+                          className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
+                            q.status === 'Full Marks'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : q.status === 'Partial'
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-rose-100 text-rose-800'
+                          }`}
+                        >
+                          {q.marksAwarded} / {q.maxMarks} Marks ({q.status})
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 leading-relaxed">{q.feedback}</p>
+                      {q.keyConceptsCovered?.length > 0 && (
+                        <div className="flex items-center gap-1 text-[10px] text-slate-500 pt-0.5">
+                          <span className="font-bold">Key topics covered:</span>
+                          {q.keyConceptsCovered.join(', ')}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Strengths & Improvements */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1.5">
+                  <span className="font-bold text-emerald-900 flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Key Strengths Identified
+                  </span>
+                  <ul className="list-disc list-inside space-y-1 text-slate-700 text-[11px]">
+                    {evaluationReport.strengths?.map((s: string, idx: number) => (
+                      <li key={idx}>{s}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1.5">
+                  <span className="font-bold text-amber-900 flex items-center gap-1">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                    Areas for Improvement
+                  </span>
+                  <ul className="list-disc list-inside space-y-1 text-slate-700 text-[11px]">
+                    {evaluationReport.areasForImprovement?.map((a: string, idx: number) => (
+                      <li key={idx}>{a}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              {/* Draft Remarks Preview */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Draft Instructor Remarks:
+                </label>
+                <div className="p-3 bg-slate-900 text-slate-200 font-mono text-xs rounded-xl border border-slate-800">
+                  {evaluationReport.instructorFeedbackDraft}
+                </div>
+              </div>
+
+              {/* Evidence Samples Box (Shows proof that question paper & solution were read!) */}
+              <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-200 text-xs space-y-2">
+                <span className="font-bold text-purple-900 flex items-center gap-1 text-[11px]">
+                  <HelpCircle className="w-3.5 h-3.5 text-purple-600" />
+                  Grounding Evidence Verification:
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] text-slate-600">
+                  <div className="p-2 bg-white rounded-lg border border-purple-100">
+                    <strong className="text-slate-800 block mb-0.5">Question Paper Extracted:</strong>
+                    <span className="italic line-clamp-3">&ldquo;{evaluationReport.questionPaperSample}&rdquo;</span>
+                  </div>
+                  <div className="p-2 bg-white rounded-lg border border-purple-100">
+                    <strong className="text-slate-800 block mb-0.5">Student Solution Extracted:</strong>
+                    <span className="italic line-clamp-3">&ldquo;{evaluationReport.solutionSample}&rdquo;</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Bottom Buttons */}
+              <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEvaluationReport(null);
+                    setEvaluatingSub(null);
+                  }}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
+                >
+                  Close Without Applying
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleApplyEvaluatedGrade}
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md shadow-emerald-900/20 flex items-center gap-1.5"
+                >
+                  <CheckCheck className="w-4 h-4" />
+                  Apply Evaluated Score ({evaluationReport.overallScore}/{assignment.totalMarks}) & Save
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* --- DETAILED MANUAL GRADING & INTEGRITY MODAL DRAWER --- */}
         {selectedSubmission && (
           <div className="fixed inset-0 z-60 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center p-4">
             <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] overflow-y-auto p-6 sm:p-8 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 space-y-6">
@@ -341,63 +835,6 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 >
                   ✕
                 </button>
-              </div>
-
-              {/* Integrity & Telemetry Audit Box */}
-              <div className="bg-slate-900 text-slate-100 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
-                    <ShieldAlert className="w-4 h-4 text-purple-400" />
-                    3-Layer Integrity Analysis
-                  </span>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                      Plagiarism:{' '}
-                      <strong
-                        className={
-                          selectedSubmission.integrityReport?.peerPlagiarismScore > 50
-                            ? 'text-rose-400'
-                            : 'text-emerald-400'
-                        }
-                      >
-                        {selectedSubmission.integrityReport?.peerPlagiarismScore}%
-                      </strong>
-                    </span>
-                    <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                      AI Likelihood:{' '}
-                      <strong className="text-purple-300">
-                        {selectedSubmission.integrityReport?.aiLikelihoodScore}%
-                      </strong>
-                    </span>
-                  </div>
-                </div>
-
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  {selectedSubmission.integrityReport?.aiReasoning}
-                </p>
-
-                {/* Telemetry Timeline logs */}
-                {selectedSubmission.integrityReport?.telemetry?.timelineLogs && (
-                  <div className="bg-slate-950/80 rounded-xl p-3 border border-slate-800 space-y-1">
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                      Input Telemetry Audit Trail:
-                    </p>
-                    <ul className="text-xs text-slate-300 font-mono space-y-1">
-                      {selectedSubmission.integrityReport.telemetry.timelineLogs.map((log, i) => (
-                        <li key={i} className="flex items-start gap-1.5">
-                          <span className="text-purple-400">›</span>
-                          <span
-                            className={
-                              log.includes('SUSPICIOUS') ? 'text-rose-400 font-bold' : 'text-slate-300'
-                            }
-                          >
-                            {log}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
               </div>
 
               {/* Student Code / Text Submission Content */}
