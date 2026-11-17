@@ -25,12 +25,72 @@ interface EvaluationResult {
   aiEngineUsed: 'Gemini AI' | 'Academic Structural Evaluator';
 }
 
+// Administrative and institutional noise words that must NEVER contribute to student marks
+const ADMINISTRATIVE_NOISE = new Set([
+  'department', 'faculty', 'official', 'course', 'workload', 'allocation',
+  'semester', 'credit', 'credits', 'hours', 'session', 'fall', 'spring', 'summer',
+  'university', 'college', 'pasrur', 'govt', 'graduate', 'roll', 'section',
+  'name', 'date', 'signature', 'assignment', 'submission', 'total', 'marks',
+  'subject', 'code', 'instructor', 'teacher', 'student', 'serial', 'page',
+  'table', 'room', 'block', 'shift', 'morning', 'evening', 'degree', 'program',
+  'bs', 'bsc', 'msc', 'bba', 'it', 'cs', 'se', 'punjab', 'lahore', 'gujranwala',
+  'sialkot', 'signature', 'checked', 'verified', 'status', 'attendance', 'lecture',
+  'lectures', 'accredited', 'hec', 'affiliation', 'principal', 'coordinator'
+]);
+
+// Programming signatures per language
+const CODE_PATTERNS = {
+  cpp: [
+    /#include\s*<[a-z0-9_.]+>/i,
+    /\busing\s+namespace\s+std\b/i,
+    /\b(?:int|void)\s+main\s*\(/i,
+    /\b(?:cout\s*<<|cin\s*>>)/,
+    /\b(?:printf|scanf)\s*\(/,
+    /;\s*$/m,
+    /{\s*[\s\S]*}/,
+    /\b(?:return\s+0|return\s+[a-z0-9_]+)\b/i,
+    /\b(?:class|struct|namespace|vector|iostream)\b/i,
+  ],
+  python: [
+    /\bdef\s+[a-z_][a-z0-9_]*\s*\(/i,
+    /\bimport\s+[a-z_]/i,
+    /\bfrom\s+[a-z_]+\s+import/i,
+    /\bprint\s*\(/,
+    /\bif\s+__name__\s*==\s*['"]__main__['"]/,
+    /:\s*$/m,
+    /\b(?:elif|else|while|for|in\s+range)\b/,
+  ],
+  java: [
+    /\bpublic\s+class\s+[a-z0-9_]+/i,
+    /\bpublic\s+static\s+void\s+main\s*\(/i,
+    /\bSystem\.out\.println\s*\(/,
+    /\bimport\s+java\./i,
+    /;\s*$/m,
+    /{\s*[\s\S]*}/,
+  ],
+  sql: [
+    /\bSELECT\s+.+\s+FROM\s+/i,
+    /\bCREATE\s+TABLE\s+/i,
+    /\bINSERT\s+INTO\s+/i,
+    /\bUPDATE\s+.+\s+SET\s+/i,
+    /\bDELETE\s+FROM\s+/i,
+    /\bWHERE\s+.+=/i,
+  ],
+  web: [
+    /<html[\s>]/i,
+    /<body[\s>]/i,
+    /<script[\s>]/i,
+    /<div[\s>]/i,
+    /\bdocument\.get/i,
+    /\bfunction\s+[a-z0-9_]+\s*\(/i,
+  ],
+};
+
 function parseQuestionsFromPaper(paperText: string): { number: string; prompt: string }[] {
   if (!paperText || paperText.trim().length === 0) {
     return [{ number: 'Task 1', prompt: 'Comprehensive Assignment Submission' }];
   }
 
-  // Regex to detect "Question 1", "Q1.", "1)", "1.", "Problem 1", "Task 1"
   const regex = /(?:^|\n)\s*(?:(?:question|q|problem|task)\s*([0-9ivx]+)|([0-9ivx]+)[\.\)\:])[:\.\)]?\s*([^\n]+(?:\n(?!(?:question|q|problem|task|[0-9ivx]+[\.\)\:])).*)*)/gi;
   const questions: { number: string; prompt: string }[] = [];
   let match: RegExpExecArray | null;
@@ -41,13 +101,12 @@ function parseQuestionsFromPaper(paperText: string): { number: string; prompt: s
     if (prompt.length > 5) {
       questions.push({
         number: `Q${num.replace(/[^0-9ivx]/gi, '') || questions.length + 1}`,
-        prompt: prompt.slice(0, 200),
+        prompt: prompt.slice(0, 250),
       });
     }
   }
 
   if (questions.length === 0) {
-    // Fallback: split by double newlines or sentences
     const paragraphs = paperText
       .split(/\n\s*\n/)
       .map((p) => p.trim())
@@ -55,15 +114,19 @@ function parseQuestionsFromPaper(paperText: string): { number: string; prompt: s
     if (paragraphs.length > 0) {
       return paragraphs.slice(0, 5).map((p, idx) => ({
         number: `Q${idx + 1}`,
-        prompt: p.slice(0, 160),
+        prompt: p.slice(0, 200),
       }));
     }
-    return [{ number: 'Q1', prompt: paperText.slice(0, 180) }];
+    return [{ number: 'Q1', prompt: paperText.slice(0, 200) }];
   }
 
   return questions.slice(0, 10);
 }
 
+/**
+ * Strict, authentic academic evaluation engine.
+ * Never awards marks to off-topic documents or generic administrative text.
+ */
 function performDeterministicEvaluation(
   questionText: string,
   solutionText: string,
@@ -76,8 +139,16 @@ function performDeterministicEvaluation(
   const marksPerQuestion = totalMarks / qCount;
 
   const solNorm = solutionText.toLowerCase();
-  const solWords = solNorm.split(/\s+/).filter((w) => w.length > 2);
+  const solWords = solNorm.split(/[^a-z0-9_#+]+/).filter((w) => w.length > 2);
   const solWordSet = new Set(solWords);
+
+  // Measure noise ratio (e.g. if the document is pure course workload / faculty allocation)
+  let noiseWordCount = 0;
+  for (const w of solWords) {
+    if (ADMINISTRATIVE_NOISE.has(w)) noiseWordCount++;
+  }
+  const noiseRatio = solWords.length > 0 ? noiseWordCount / solWords.length : 0;
+  const isDominantlyAdministrative = noiseRatio > 0.40 && solWords.length > 15;
 
   let accumulatedScore = 0;
   const breakdown: QuestionAssessment[] = [];
@@ -86,51 +157,115 @@ function performDeterministicEvaluation(
 
   for (const q of parsedQuestions) {
     const promptNorm = q.prompt.toLowerCase();
-    const promptWords = promptNorm
-      .split(/\s+/)
-      .filter((w) => w.length > 3 && !['what', 'explain', 'write', 'define', 'with', 'using', 'that', 'from', 'have', 'this'].includes(w));
 
-    // Match keywords from question in student solution
+    // Check if the prompt requires programming
+    const isCodingPrompt = /(?:program|code|implement|c\+\+|cpp|java|python|script|function|class|algorithm|syntax|loop|array|pointer)/i.test(promptNorm);
+    const isCpp = /c\+\+|cpp|\bc\b/i.test(promptNorm) || /csc-1|programming/i.test(subjectCode);
+    const isPython = /python/i.test(promptNorm);
+    const isJava = /java\b/i.test(promptNorm);
+    const isSql = /sql|database|query|table/i.test(promptNorm);
+    const isWeb = /html|css|javascript|web/i.test(promptNorm);
+
+    // Filter meaningful technical keywords from prompt (exclude noise and English stop words)
+    const promptWords = promptNorm
+      .split(/[^a-z0-9_#+]+/)
+      .filter((w) => w.length > 2 && !ADMINISTRATIVE_NOISE.has(w) && !['what', 'explain', 'write', 'define', 'with', 'using', 'that', 'from', 'have', 'this', 'your', 'simple', 'given', 'following'].includes(w));
+
     let matchedKeywords = 0;
     const coveredConcepts: string[] = [];
-
     for (const pw of promptWords) {
       if (solWordSet.has(pw) || solNorm.includes(pw)) {
         matchedKeywords++;
-        if (coveredConcepts.length < 3) coveredConcepts.push(pw);
+        if (coveredConcepts.length < 4) coveredConcepts.push(pw);
       }
     }
 
-    const keywordRatio = promptWords.length > 0 ? matchedKeywords / promptWords.length : 0.5;
+    const keywordRatio = promptWords.length > 0 ? matchedKeywords / promptWords.length : 0;
 
-    // Check code or technical syntax presence
-    const hasCodeBlock = solNorm.includes('function') || solNorm.includes('class') || solNorm.includes('def ') || solNorm.includes('int ') || solNorm.includes('void ') || solNorm.includes('{') || solNorm.includes('import');
-    const hasDetailedExplanation = solWords.length > 100;
+    // Detect code signatures in student submission
+    let codeSignatureScore = 0;
+    if (isCpp) {
+      const cppMatches = CODE_PATTERNS.cpp.filter((p) => p.test(solutionText)).length;
+      codeSignatureScore = cppMatches;
+    } else if (isPython) {
+      codeSignatureScore = CODE_PATTERNS.python.filter((p) => p.test(solutionText)).length;
+    } else if (isJava) {
+      codeSignatureScore = CODE_PATTERNS.java.filter((p) => p.test(solutionText)).length;
+    } else if (isSql) {
+      codeSignatureScore = CODE_PATTERNS.sql.filter((p) => p.test(solutionText)).length;
+    } else if (isWeb) {
+      codeSignatureScore = CODE_PATTERNS.web.filter((p) => p.test(solutionText)).length;
+    } else if (isCodingPrompt) {
+      // General code fallback
+      const anyMatches = [
+        ...CODE_PATTERNS.cpp,
+        ...CODE_PATTERNS.python,
+        ...CODE_PATTERNS.java,
+      ].filter((p) => p.test(solutionText)).length;
+      codeSignatureScore = anyMatches;
+    }
 
     let qScore = 0;
     let status: QuestionAssessment['status'] = 'Missing';
     let feedback = '';
 
-    if (keywordRatio >= 0.6 && (hasCodeBlock || hasDetailedExplanation)) {
-      qScore = Number((marksPerQuestion * 0.95).toFixed(1));
-      status = 'Full Marks';
-      feedback = `Thorough response covering required concepts (${coveredConcepts.join(', ') || 'technical concepts'}) with sound logic.`;
-      strengths.push(`${q.number}: Strong conceptual articulation and relevant terminology.`);
-    } else if (keywordRatio >= 0.3) {
-      qScore = Number((marksPerQuestion * 0.7).toFixed(1));
-      status = 'Partial';
-      feedback = `Adequate understanding demonstrated. Could be improved with deeper algorithmic explanation or code examples.`;
-      improvements.push(`${q.number}: Add more detailed step-by-step reasoning or implementation code.`);
-    } else if (solWords.length > 30) {
-      qScore = Number((marksPerQuestion * 0.4).toFixed(1));
-      status = 'Needs Improvement';
-      feedback = `Superficial or brief response. Did not fully address key constraints of the question.`;
-      improvements.push(`${q.number}: Elaborate on the core concepts asked in the question paper.`);
+    // STRICT CODING TASK EVALUATION:
+    if (isCodingPrompt) {
+      if (codeSignatureScore === 0) {
+        // Zero code found in a coding task!
+        qScore = 0;
+        status = 'Missing';
+        if (isDominantlyAdministrative) {
+          feedback = `Off-Topic Submission: Question requires programming code, but submitted document contains administrative course allocation/faculty workload text with 0 code constructs.`;
+        } else {
+          feedback = `No code or valid programming syntax detected. Missing essential constructs (e.g., #include, main(), variables, or logic statements).`;
+        }
+        improvements.push(`${q.number}: Provide complete, compilable source code with proper syntax and comments.`);
+      } else if (codeSignatureScore >= 3 && (keywordRatio >= 0.4 || matchedKeywords >= 1)) {
+        // Strong code implementation
+        qScore = Number((marksPerQuestion * 0.95).toFixed(1));
+        status = 'Full Marks';
+        feedback = `Executable code structure found with appropriate language constructs and relevant logic.`;
+        strengths.push(`${q.number}: Clean syntax and proper programming structure demonstrated.`);
+      } else if (codeSignatureScore >= 1) {
+        // Partial code
+        qScore = Number((marksPerQuestion * 0.50).toFixed(1));
+        status = 'Partial';
+        feedback = `Partial code constructs detected, but lacks complete logic, required functions, or full solution.`;
+        improvements.push(`${q.number}: Complete the algorithm and verify edge cases/output.`);
+      } else {
+        qScore = 0;
+        status = 'Missing';
+        feedback = `Incomplete or irrelevant code. Failed to meet the question requirements.`;
+      }
     } else {
-      qScore = 0;
-      status = 'Missing';
-      feedback = `No substantive answer found corresponding to this question prompt.`;
-      improvements.push(`${q.number}: Question was left unattempted or answered too briefly.`);
+      // STRICT THEORETICAL TASK EVALUATION:
+      if (isDominantlyAdministrative && keywordRatio < 0.25) {
+        qScore = 0;
+        status = 'Missing';
+        feedback = `Off-topic administrative content detected. The text does not answer the technical question asked.`;
+        improvements.push(`${q.number}: Address the specific topic rather than uploading unrelated institutional material.`);
+      } else if (keywordRatio >= 0.60 && solWords.length >= 60) {
+        qScore = Number((marksPerQuestion * 0.90).toFixed(1));
+        status = 'Full Marks';
+        feedback = `Comprehensive explanation covering core domain terminology (${coveredConcepts.join(', ')}).`;
+        strengths.push(`${q.number}: In-depth conceptual clarity and thorough explanations.`);
+      } else if (keywordRatio >= 0.35 && solWords.length >= 35) {
+        qScore = Number((marksPerQuestion * 0.60).toFixed(1));
+        status = 'Partial';
+        feedback = `Basic conceptual understanding shown, but requires deeper elaboration and technical specifics.`;
+        improvements.push(`${q.number}: Elaborate further on core principles and provide supporting examples.`);
+      } else if (keywordRatio >= 0.15 && solWords.length >= 20) {
+        qScore = Number((marksPerQuestion * 0.30).toFixed(1));
+        status = 'Needs Improvement';
+        feedback = `Superficial response with minimal technical coverage.`;
+        improvements.push(`${q.number}: Substantially expand on key concepts.`);
+      } else {
+        qScore = 0;
+        status = 'Missing';
+        feedback = `No substantive answer found corresponding to this question prompt.`;
+        improvements.push(`${q.number}: Unanswered or entirely off-topic.`);
+      }
     }
 
     accumulatedScore += qScore;
@@ -150,13 +285,18 @@ function performDeterministicEvaluation(
 
   let overallStatus: EvaluationResult['status'] = 'Good';
   if (percentage >= 85) overallStatus = 'Proficient';
-  else if (percentage >= 65) overallStatus = 'Good';
-  else if (percentage >= 45) overallStatus = 'Needs Improvement';
+  else if (percentage >= 60) overallStatus = 'Good';
+  else if (percentage >= 35) overallStatus = 'Needs Improvement';
   else overallStatus = 'Incomplete';
 
-  const instructorFeedbackDraft = `Assignment evaluated for ${subjectCode}. Student ${studentName} scored ${finalScore}/${totalMarks} (${percentage}%). ${
-    strengths.length > 0 ? 'Strengths: ' + strengths.slice(0, 2).join(' ') : ''
-  } ${improvements.length > 0 ? 'Areas for improvement: ' + improvements.slice(0, 2).join(' ') : 'Good work overall.'}`;
+  let instructorFeedbackDraft = '';
+  if (finalScore === 0) {
+    instructorFeedbackDraft = `Submission rejected / 0 marks awarded for ${subjectCode}. The uploaded document appears to be off-topic or administrative content with no valid solution or programming code addressing the assignment.`;
+  } else {
+    instructorFeedbackDraft = `Assignment evaluated for ${subjectCode}. Student ${studentName} scored ${finalScore}/${totalMarks} (${percentage}%). ${
+      strengths.length > 0 ? 'Strengths: ' + strengths.slice(0, 2).join(' ') : ''
+    } ${improvements.length > 0 ? 'Areas for improvement: ' + improvements.slice(0, 2).join(' ') : ''}`;
+  }
 
   return {
     overallScore: finalScore,
@@ -166,8 +306,8 @@ function performDeterministicEvaluation(
     questionPaperSample: questionText.slice(0, 350) + (questionText.length > 350 ? '...' : ''),
     solutionSample: solutionText.slice(0, 350) + (solutionText.length > 350 ? '...' : ''),
     questionBreakdown: breakdown,
-    strengths: strengths.length > 0 ? strengths : ['Submitted on time with formatted document structure.'],
-    areasForImprovement: improvements.length > 0 ? improvements : ['Review edge cases and add in-depth code comments.'],
+    strengths: strengths.length > 0 ? strengths : ['No valid strengths identified: submitted document is off-topic or empty.'],
+    areasForImprovement: improvements.length > 0 ? improvements : ['Review assignment guidelines and submit direct answers.'],
     instructorFeedbackDraft,
     aiEngineUsed: 'Academic Structural Evaluator',
   };
@@ -183,6 +323,7 @@ export async function POST(req: NextRequest) {
       solutionTextOverride,
       assignment,
       student,
+      apiKey: userApiKey,
     } = body;
 
     const totalMarks = Number(assignment?.totalMarks) || 20;
@@ -211,11 +352,11 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 3. Optional: Call Gemini API if an API key is provided
-    const apiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
-    if (apiKey) {
+    // 3. Optional: Call Google Gemini API if provided by user or environment
+    const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 10) {
       try {
-        const prompt = `You are a strict, fair, and meticulous Computer Science Professor at Govt. Graduate College Pasrur.
+        const prompt = `You are a strict, fair, and meticulous Computer Science Professor at Govt. Graduate College Pasrur (GGC Pasrur).
 Evaluate this student submission against the official assignment question paper.
 
 ASSIGNMENT DETAILS:
@@ -233,7 +374,16 @@ STUDENT SUBMITTED SOLUTION CONTENT:
 ${solutionText}
 """
 
-Evaluate each question carefully based on correctness, technical depth, logic, and code accuracy.
+CRITICAL ACADEMIC INTEGRITY & GRADING RULES:
+1. STRICT ZERO TOLERANCE FOR OFF-TOPIC / UNRELATED SUBMISSIONS:
+   If the student submitted an off-topic file (such as a faculty course list, timetable, syllabus, random essay, or text unrelated to the questions), you MUST award 0 MARKS overall and 0 marks for every question. NEVER award courtesy or partial marks for off-topic content or mere document length!
+2. PROGRAMMING QUESTIONS:
+   If a question asks to write a program or code in C++ (or any other language), the student MUST provide actual code syntax (e.g. #include, main(), variables, logic, statements). If no code is present, award 0 marks for that question.
+3. FAIR PARTIAL MARKS:
+   Only award partial marks if the student genuinely attempted the specific question with relevant concepts or partial code.
+4. DETAILED FEEDBACK:
+   Provide constructive, honest critique explaining exactly why marks were awarded or deducted.
+
 Return ONLY a valid JSON object matching this schema:
 {
   "overallScore": number (0 to ${totalMarks}),
@@ -254,13 +404,13 @@ Return ONLY a valid JSON object matching this schema:
 }`;
 
         const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { responseMimeType: 'application/json', temperature: 0.2 },
+              generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
             }),
           }
         );
@@ -279,7 +429,7 @@ Return ONLY a valid JSON object matching this schema:
                 overallScore: score,
                 totalMarks,
                 percentage: pct,
-                status: pct >= 85 ? 'Proficient' : pct >= 65 ? 'Good' : pct >= 45 ? 'Needs Improvement' : 'Incomplete',
+                status: pct >= 85 ? 'Proficient' : pct >= 60 ? 'Good' : pct >= 35 ? 'Needs Improvement' : 'Incomplete',
                 questionPaperSample: questionText.slice(0, 350) + (questionText.length > 350 ? '...' : ''),
                 solutionSample: solutionText.slice(0, 350) + (solutionText.length > 350 ? '...' : ''),
                 questionBreakdown: parsed.questionBreakdown || [],
@@ -296,7 +446,7 @@ Return ONLY a valid JSON object matching this schema:
       }
     }
 
-    // 4. Grounded Academic Structural Evaluation
+    // 4. Grounded Academic Structural Evaluation (Strict Rule-Based)
     const evaluation = performDeterministicEvaluation(
       questionText,
       solutionText,

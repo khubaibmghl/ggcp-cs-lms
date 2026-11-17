@@ -54,6 +54,13 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [evaluatingSubId, setEvaluatingSubId] = useState<string | null>(null);
   const [evaluationReport, setEvaluationReport] = useState<any | null>(null);
   const [evaluatingSub, setEvaluatingSub] = useState<Submission | null>(null);
+  const [showAiSettings, setShowAiSettings] = useState(false);
+  const [geminiApiKey, setGeminiApiKey] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('ggcp_gemini_api_key') || '';
+    }
+    return '';
+  });
 
   const allSubmissions = dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id);
 
@@ -242,6 +249,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
             rollNumber: sub.studentRollNumber,
             section: sub.studentSection,
           },
+          apiKey: geminiApiKey ? geminiApiKey.trim() : undefined,
         }),
       });
 
@@ -320,7 +328,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
             ))}
           </div>
 
-          <div className="flex items-center space-x-4 text-xs font-semibold">
+          <div className="flex items-center space-x-3 text-xs font-semibold">
             <span className="text-slate-700">
               Submitted: <strong className="text-emerald-700">{filteredSubmissions.length}</strong>
             </span>
@@ -328,8 +336,66 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               Missing (Not Submitted):{' '}
               <strong className="text-rose-600">{missingStudents.length}</strong>
             </span>
+            <button
+              type="button"
+              onClick={() => setShowAiSettings(!showAiSettings)}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition ${
+                showAiSettings
+                  ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
+                  : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {geminiApiKey ? 'Gemini AI Active' : 'AI Engine Settings'}
+            </button>
           </div>
         </div>
+
+        {/* AI Engine Settings Drawer */}
+        {showAiSettings && (
+          <div className="bg-purple-50/90 border-b border-purple-200 p-4 animate-in slide-in-from-top-2">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex-1">
+                <h4 className="text-xs font-extrabold text-purple-950 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-purple-700" />
+                  Assignment Correction Engine Configuration
+                </h4>
+                <p className="text-[11px] text-purple-800/80 mt-0.5">
+                  Current Mode: <strong>{geminiApiKey ? 'Google Gemini 1.5 Flash' : 'Academic Strict Rule Evaluator'}</strong>. Zero-tolerance scoring prevents false marks for off-topic/administrative files. To enable deep semantic grading, paste your Google Gemini API key.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <input
+                  type="password"
+                  value={geminiApiKey}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setGeminiApiKey(v);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('ggcp_gemini_api_key', v);
+                    }
+                  }}
+                  placeholder="Paste Gemini API Key (optional)..."
+                  className="px-3 py-1.5 text-xs rounded-xl border border-purple-300 bg-white text-slate-800 placeholder-slate-400 focus:outline-purple-600 w-full sm:w-64"
+                />
+                {geminiApiKey && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setGeminiApiKey('');
+                      if (typeof window !== 'undefined') {
+                        localStorage.removeItem('ggcp_gemini_api_key');
+                      }
+                    }}
+                    className="text-[11px] text-rose-600 hover:underline font-bold whitespace-nowrap"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Modal Main Body (2 Columns: Submissions Table & Missing Roster) */}
         <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
@@ -659,8 +725,14 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               <div className="flex items-center justify-between border-b border-slate-100 pb-4">
                 <div>
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md uppercase">
-                      Automated Assignment Correction
+                    <span
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border ${
+                        evaluationReport.overallScore === 0
+                          ? 'text-rose-700 bg-rose-50 border-rose-200'
+                          : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                      }`}
+                    >
+                      {evaluationReport.overallScore === 0 ? 'Off-Topic / Non-Compliant' : 'Automated Assignment Correction'}
                     </span>
                     <span className="text-[10px] font-medium text-slate-500">
                       Engine: {evaluationReport.aiEngineUsed}
@@ -682,15 +754,31 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               </div>
 
               {/* Recommended Score Banner */}
-              <div className="bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900 text-white rounded-2xl p-5 flex items-center justify-between shadow-lg">
+              <div
+                className={`text-white rounded-2xl p-5 flex items-center justify-between shadow-lg transition ${
+                  evaluationReport.overallScore === 0
+                    ? 'bg-gradient-to-r from-rose-700 via-rose-800 to-slate-950 border border-rose-500/30'
+                    : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900'
+                }`}
+              >
                 <div>
-                  <span className="text-xs font-semibold text-emerald-200 block uppercase tracking-wider">
-                    Recommended Grade
+                  <span
+                    className={`text-xs font-semibold block uppercase tracking-wider ${
+                      evaluationReport.overallScore === 0 ? 'text-rose-200' : 'text-emerald-200'
+                    }`}
+                  >
+                    {evaluationReport.overallScore === 0 ? '⚠️ Off-Topic Evaluation (0 Marks)' : 'Recommended Grade'}
                   </span>
                   <div className="flex items-baseline gap-2 mt-1">
                     <span className="text-3xl font-black">{evaluationReport.overallScore}</span>
-                    <span className="text-base text-emerald-200">/ {assignment.totalMarks} Marks</span>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/20 font-bold ml-2">
+                    <span className="text-base opacity-80">/ {assignment.totalMarks} Marks</span>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-bold ml-2 ${
+                        evaluationReport.overallScore === 0
+                          ? 'bg-rose-950/70 text-rose-200 border border-rose-400/30'
+                          : 'bg-white/20'
+                      }`}
+                    >
                       {evaluationReport.percentage}% • {evaluationReport.status}
                     </span>
                   </div>
@@ -699,9 +787,13 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 <button
                   type="button"
                   onClick={handleApplyEvaluatedGrade}
-                  className="px-5 py-2.5 rounded-xl bg-white text-emerald-800 hover:bg-emerald-50 font-extrabold text-xs shadow-md transition flex items-center gap-1.5"
+                  className={`px-5 py-2.5 rounded-xl font-extrabold text-xs shadow-md transition flex items-center gap-1.5 ${
+                    evaluationReport.overallScore === 0
+                      ? 'bg-rose-100 hover:bg-white text-rose-950'
+                      : 'bg-white text-emerald-800 hover:bg-emerald-50'
+                  }`}
                 >
-                  <CheckCheck className="w-4 h-4 text-emerald-600" />
+                  <CheckCheck className={`w-4 h-4 ${evaluationReport.overallScore === 0 ? 'text-rose-600' : 'text-emerald-600'}`} />
                   Apply Score & Feedback
                 </button>
               </div>

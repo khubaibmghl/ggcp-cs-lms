@@ -184,7 +184,7 @@ export const LoginPage: React.FC = () => {
 
           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-xs font-semibold text-purple-200">
             <Sparkle className="w-3.5 h-3.5 text-purple-400 fill-purple-400" />
-            BSCS Portal 2024-2028
+            BSCS Portal
           </span>
         </div>
 
@@ -259,11 +259,10 @@ export const LoginPage: React.FC = () => {
                   setRegError(null);
                   setIssuedStudentId(null);
                 }}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
-                  mode === 'login'
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
-                    : 'text-slate-400 hover:text-white'
-                }`}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${mode === 'login'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
+                  : 'text-slate-400 hover:text-white'
+                  }`}
               >
                 <User className="w-3.5 h-3.5" />
                 Sign In
@@ -277,11 +276,10 @@ export const LoginPage: React.FC = () => {
                   setRegError(null);
                   setIssuedStudentId(null);
                 }}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
-                  mode === 'register'
-                    ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
-                    : 'text-slate-400 hover:text-white'
-                }`}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${mode === 'register'
+                  ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
+                  : 'text-slate-400 hover:text-white'
+                  }`}
               >
                 <GraduationCap className="w-4 h-4" />
                 Student Registration
@@ -312,13 +310,13 @@ export const LoginPage: React.FC = () => {
                   {/* User ID / Identifier Input */}
                   <div>
                     <label className="block text-xs font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
-                      Official User ID / Roll Number
+                      User ID / Roll Number
                     </label>
                     <div className="relative">
                       <input
                         type="text"
                         required
-                        placeholder="e.g. BCS1-A1-001, admin, or faculty"
+                        placeholder="e.g. BCS1-A1-001"
                         value={identifier}
                         onChange={(e) => setIdentifier(e.target.value)}
                         className="w-full text-xs font-semibold pl-10 pr-4 py-3.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
@@ -526,7 +524,7 @@ export const LoginPage: React.FC = () => {
 
                         <div>
                           <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
-                            Roll No (1..N)
+                            Roll No
                           </label>
                           <input
                             type="number"
@@ -535,11 +533,10 @@ export const LoginPage: React.FC = () => {
                             required
                             value={rollNumber}
                             onChange={(e) => setRollNumber(e.target.value === '' ? '' : Number(e.target.value))}
-                            className={`w-full text-xs font-bold px-2.5 py-2.5 rounded-xl bg-slate-950/80 border focus:outline-none transition ${
-                              duplicateStudent
-                                ? 'border-rose-500 text-rose-300 focus:ring-2 focus:ring-rose-500/20'
-                                : 'border-slate-700 text-white focus:border-purple-500'
-                            }`}
+                            className={`w-full text-xs font-bold px-2.5 py-2.5 rounded-xl bg-slate-950/80 border focus:outline-none transition ${duplicateStudent
+                              ? 'border-rose-500 text-rose-300 focus:ring-2 focus:ring-rose-500/20'
+                              : 'border-slate-700 text-white focus:border-purple-500'
+                              }`}
                           />
                         </div>
                       </div>
@@ -609,11 +606,10 @@ export const LoginPage: React.FC = () => {
                       <button
                         type="submit"
                         disabled={!!duplicateStudent}
-                        className={`w-full py-3.5 mt-2 rounded-xl text-white font-extrabold text-xs shadow-lg transition flex items-center justify-center gap-2 ${
-                          duplicateStudent
-                            ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
-                            : 'bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 shadow-purple-950/50 hover:scale-[1.01]'
-                        }`}
+                        className={`w-full py-3.5 mt-2 rounded-xl text-white font-extrabold text-xs shadow-lg transition flex items-center justify-center gap-2 ${duplicateStudent
+                          ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                          : 'bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 shadow-purple-950/50 hover:scale-[1.01]'
+                          }`}
                       >
                         {duplicateStudent ? (
                           `Roll #${rollNumber} is already registered`
