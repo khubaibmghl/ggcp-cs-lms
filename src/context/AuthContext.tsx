@@ -22,7 +22,12 @@ interface AuthContextType {
     semester: SemesterNumber;
     section: Section;
     password: string;
-  }) => { user: User; generatedLoginId: string };
+  }) => {
+    success: boolean;
+    user?: User;
+    generatedLoginId?: string;
+    message?: string;
+  };
   createTeacherByAdmin: (data: {
     name: string;
     phone: string;
@@ -139,7 +144,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   };
 
-  // Student Self-Registration: Issues system-generated Login ID
+  // Student Self-Registration: Issues system-generated Login ID with strict duplicate check
   const registerStudent = (data: {
     name: string;
     fatherName: string;
@@ -148,17 +153,60 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     section: Section;
     password: string;
   }) => {
-    const generatedLoginId = dataStore.generateStudentLoginId(data.semester, data.section, data.rollNumber);
+    // 1. Validate roll number
+    const rollNum = Number(data.rollNumber);
+    if (!rollNum || isNaN(rollNum) || rollNum < 1 || !Number.isInteger(rollNum)) {
+      return {
+        success: false,
+        message: 'Please enter a valid positive roll number (e.g., 1, 2, 3...).',
+      };
+    }
+
+    if (rollNum > 250) {
+      return {
+        success: false,
+        message: 'Roll number cannot exceed 250 for a section. Please enter your valid class roll number.',
+      };
+    }
+
+    // 2. Strict check for duplicate roll number in the SAME class (Semester + Section)
+    const currentUsers = dataStore.getUsers();
+    const existingStudent = currentUsers.find(
+      (u) =>
+        u.role === 'student' &&
+        Number(u.semester) === Number(data.semester) &&
+        u.section === data.section &&
+        Number(u.rollNumber) === rollNum
+    );
+
+    if (existingStudent) {
+      return {
+        success: false,
+        message: `Roll Number ${rollNum} is already registered in Semester ${data.semester} (Section ${data.section}) to "${existingStudent.name}". Each student in a class must have a unique roll number. Please enter a valid, unassigned roll number or contact your teacher.`,
+      };
+    }
+
+    // 3. Check for duplicate login ID
+    const generatedLoginId = dataStore.generateStudentLoginId(data.semester, data.section, rollNum);
+    const existingLogin = currentUsers.find(
+      (u) => u.loginId?.toLowerCase() === generatedLoginId.toLowerCase()
+    );
+    if (existingLogin) {
+      return {
+        success: false,
+        message: `An account with ID "${generatedLoginId}" already exists. If this is you, please log in with your credentials.`,
+      };
+    }
 
     const newUser: User = {
       id: `usr-stud-${Date.now()}`,
       loginId: generatedLoginId,
-      name: data.name,
-      fatherName: data.fatherName,
+      name: data.name.trim(),
+      fatherName: data.fatherName.trim(),
       email: `${generatedLoginId.toLowerCase()}@student.college.edu`,
       password: data.password,
       role: 'student',
-      rollNumber: data.rollNumber,
+      rollNumber: rollNum,
       semester: data.semester,
       section: data.section,
       avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${generatedLoginId}`,
@@ -167,7 +215,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     dataStore.addUser(newUser);
     setUsers(dataStore.getUsers());
-    return { user: newUser, generatedLoginId };
+    return { success: true, user: newUser, generatedLoginId };
   };
 
   // Admin Adds/Creates Teacher Account with 2-Step Multi-Course & Multi-Section Mapping

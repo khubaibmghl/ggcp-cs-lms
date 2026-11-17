@@ -25,6 +25,11 @@ CREATE TABLE IF NOT EXISTS public.users (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Ensure roll numbers 1..N are strictly unique within the SAME class (Semester + Section)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_unique_student_roll_per_class
+ON public.users (semester, section, roll_number)
+WHERE role = 'student' AND roll_number IS NOT NULL;
+
 -- 2. CURRICULUM SUBJECTS TABLE
 CREATE TABLE IF NOT EXISTS public.subjects (
   id TEXT PRIMARY KEY,

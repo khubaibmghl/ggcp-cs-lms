@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { SemesterNumber, Section } from '@/types';
 import {
@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
-  const { login, registerStudent } = useAuth();
+  const { login, registerStudent, users } = useAuth();
 
   // Mode: 'login' or 'register' (completely separate clean views)
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -33,6 +33,21 @@ export const LoginPage: React.FC = () => {
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [regError, setRegError] = useState<string | null>(null);
+
+  // Real-time check for duplicate student in the SAME class (Semester + Section)
+  const duplicateStudent = useMemo(() => {
+    const num = Number(rollNumber);
+    if (!num || isNaN(num) || num < 1) return null;
+    return (
+      users.find(
+        (u) =>
+          u.role === 'student' &&
+          Number(u.semester) === Number(semester) &&
+          u.section === section &&
+          Number(u.rollNumber) === num
+      ) || null
+    );
+  }, [users, semester, section, rollNumber]);
 
   // Registration Success State
   const [issuedStudentId, setIssuedStudentId] = useState<string | null>(null);
@@ -60,7 +75,25 @@ export const LoginPage: React.FC = () => {
     setRegError(null);
 
     if (!name.trim() || !fatherName.trim()) {
-      setRegError('Please enter full name and father name.');
+      setRegError('Please enter full student name and father name.');
+      return;
+    }
+
+    const rollNum = Number(rollNumber);
+    if (!rollNum || isNaN(rollNum) || rollNum < 1 || !Number.isInteger(rollNum)) {
+      setRegError('Please enter a valid positive roll number (e.g., 1, 2, 3...).');
+      return;
+    }
+
+    if (rollNum > 250) {
+      setRegError('Roll number cannot exceed 250 for a section. Please verify your official roll number.');
+      return;
+    }
+
+    if (duplicateStudent) {
+      setRegError(
+        `Roll Number ${rollNum} is already registered in Semester ${semester} (Section ${section}) to "${duplicateStudent.name}". Please enter your correct official roll number or contact your class teacher.`
+      );
       return;
     }
 
@@ -70,7 +103,7 @@ export const LoginPage: React.FC = () => {
     }
 
     if (regPassword !== regConfirmPassword) {
-      setRegError('Passwords do not match.');
+      setRegError('Passwords do not match. Please verify your password confirmation.');
       return;
     }
 
@@ -79,11 +112,16 @@ export const LoginPage: React.FC = () => {
       fatherName: fatherName.trim(),
       semester,
       section,
-      rollNumber: Number(rollNumber),
+      rollNumber: rollNum,
       password: regPassword,
     });
 
-    setIssuedStudentId(result.generatedLoginId);
+    if (!result.success) {
+      setRegError(result.message || 'Registration failed. Please check your roll number.');
+      return;
+    }
+
+    setIssuedStudentId(result.generatedLoginId || null);
   };
 
   const handleCopyId = () => {
@@ -334,14 +372,31 @@ export const LoginPage: React.FC = () => {
                         <input
                           type="number"
                           min={1}
-                          max={200}
+                          max={250}
                           required
                           value={rollNumber}
                           onChange={(e) => setRollNumber(Number(e.target.value))}
-                          className="w-full text-xs font-bold px-2.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
+                          className={`w-full text-xs font-bold px-2.5 py-2 rounded-xl border focus:outline-none focus:ring-2 text-slate-900 transition ${
+                            duplicateStudent
+                              ? 'border-rose-400 bg-rose-50/60 focus:ring-rose-500 text-rose-900'
+                              : 'border-slate-200 focus:ring-purple-600'
+                          }`}
                         />
                       </div>
                     </div>
+
+                    {/* Inline alert if roll number is duplicate in this class */}
+                    {duplicateStudent && (
+                      <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5 animate-in fade-in">
+                        <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <p className="font-bold">Roll #{rollNumber} is already taken in this class!</p>
+                          <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
+                            Already assigned to student <strong>{duplicateStudent.name}</strong> in Semester {semester} ({section}). Each student in this class must use a unique roll number.
+                          </p>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-2">
                       <div>
@@ -370,9 +425,14 @@ export const LoginPage: React.FC = () => {
 
                     <button
                       type="submit"
-                      className="w-full py-3 mt-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md transition"
+                      disabled={!!duplicateStudent}
+                      className={`w-full py-3 mt-2 rounded-xl text-white font-extrabold text-xs shadow-md transition ${
+                        duplicateStudent
+                          ? 'bg-slate-400 cursor-not-allowed opacity-80'
+                          : 'bg-purple-700 hover:bg-purple-800 shadow-purple-900/20'
+                      }`}
                     >
-                      Register Account
+                      {duplicateStudent ? `Roll #${rollNumber} is already registered` : 'Register Account'}
                     </button>
                   </form>
 
