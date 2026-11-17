@@ -206,13 +206,27 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentTab }
                         {/* Assignment File Link */}
                         <td className="py-4 px-4">
                           {asg.resourceFileName ? (
-                            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 text-purple-800 font-mono text-[11px] font-bold border border-purple-200/60">
-                              <Code2 className="w-3.5 h-3.5 text-purple-600" />
-                              <span>{asg.resourceFileName}</span>
-                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!asg.resourceFileContent) return;
+                                const link = document.createElement('a');
+                                link.href = asg.resourceFileContent;
+                                link.download = asg.resourceFileName || 'Assignment_Questions.pdf';
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 text-xs font-bold border border-purple-200 transition"
+                              title="Download Assignment Question Paper"
+                            >
+                              <FileText className="w-3.5 h-3.5 text-purple-600" />
+                              <span className="truncate max-w-[130px]">{asg.resourceFileName}</span>
+                              <Download className="w-3 h-3 text-purple-600" />
+                            </button>
                           ) : (
                             <span className="text-[11px] text-slate-400 font-medium italic">
-                              Instructions in prompt
+                              No file attached
                             </span>
                           )}
                         </td>

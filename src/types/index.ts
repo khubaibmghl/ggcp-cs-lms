@@ -73,7 +73,7 @@ export interface Assignment {
   subjectName: string;
   targetSections: ('All' | Section)[];
   title: string;
-  description: string;
+  description?: string;
   totalMarks: number;
   deadlineDate: string; // YYYY-MM-DD
   gradingMode: GradingMode;

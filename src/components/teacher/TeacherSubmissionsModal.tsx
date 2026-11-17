@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { dataStore } from '@/lib/storage';
-import { Assignment, Submission, Section } from '@/types';
+import { Assignment, Submission, Section, UploadedFile } from '@/types';
 import {
   FileText,
   CheckCircle,
@@ -20,6 +20,7 @@ import {
   Flame,
   Activity,
   ExternalLink,
+  Download,
   Image as ImageIcon,
 } from 'lucide-react';
 
@@ -35,7 +36,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const { users } = useAuth();
   const [selectedSection, setSelectedSection] = useState<'All' | Section>('All');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
-  const [gradingScore, setGradingScore] = useState<number>(0);
+  const [gradingScore, setGradingScore] = useState<number | string>('');
   const [gradingFeedback, setGradingFeedback] = useState<string>('');
 
   const allSubmissions = dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id);
@@ -59,16 +60,55 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
   const handleOpenGrading = (sub: Submission) => {
     setSelectedSubmission(sub);
-    setGradingScore(sub.score || sub.aiSuggestedScore || 0);
+    // Only use existing instructor score if already graded; never pre-fill fake AI score
+    setGradingScore(sub.score !== undefined ? sub.score : '');
     setGradingFeedback(sub.teacherFeedback || '');
+  };
+
+  const handleDownloadStudentFile = (file: UploadedFile) => {
+    const data = file.dataUrl || file.url;
+    if (!data) return;
+
+    if (data.startsWith('data:')) {
+      const a = document.createElement('a');
+      a.href = data;
+      a.download = file.name || 'assignment_solution.pdf';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
+    // Handle Cloudinary delivery URLs
+    let downloadUrl = data;
+    if (
+      downloadUrl.includes('cloudinary.com') &&
+      downloadUrl.includes('/image/upload/') &&
+      (downloadUrl.toLowerCase().endsWith('.pdf') ||
+        file.name?.toLowerCase().endsWith('.pdf') ||
+        file.name?.toLowerCase().endsWith('.docx') ||
+        file.name?.toLowerCase().endsWith('.doc'))
+    ) {
+      downloadUrl = downloadUrl.replace('/image/upload/', '/raw/upload/');
+    }
+
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.download = file.name || 'assignment_solution.pdf';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
   };
 
   const handleSaveGrade = () => {
     if (!selectedSubmission) return;
+    const finalScore = gradingScore === '' ? 0 : Number(gradingScore);
     const updated: Submission = {
       ...selectedSubmission,
       status: 'graded',
-      score: Number(gradingScore),
+      score: finalScore,
       teacherFeedback: gradingFeedback.trim(),
     };
     dataStore.upsertSubmission(updated);
@@ -417,16 +457,14 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                           )}
 
                           {fileSrc && (
-                            <a
-                              href={fileSrc}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              download={file.name}
-                              className="text-center text-[11px] font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 py-1.5 px-3 rounded-xl transition flex items-center justify-center gap-1"
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadStudentFile(file)}
+                              className="w-full text-center text-xs font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 py-2 px-3 rounded-xl transition flex items-center justify-center gap-1.5 border border-purple-200"
                             >
-                              <ExternalLink className="w-3.5 h-3.5" />
-                              Open / Download Full Solution
-                            </a>
+                              <Download className="w-3.5 h-3.5" />
+                              Download & View Solution
+                            </button>
                           )}
                         </div>
                       );
@@ -442,8 +480,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                     <label className="text-xs font-bold text-purple-950 block">
                       Assign Grade (Out of {assignment.totalMarks}):
                     </label>
-                    <span className="text-[11px] text-purple-800">
-                      AI Suggested Score: {selectedSubmission.aiSuggestedScore || 'N/A'}
+                    <span className="text-[11px] text-purple-800 font-medium">
+                      {selectedSubmission.score !== undefined
+                        ? `Current Grade: ${selectedSubmission.score} / ${assignment.totalMarks}`
+                        : 'Status: Pending Manual Instructor Evaluation'}
                     </span>
                   </div>
 
@@ -452,8 +492,9 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                     min={0}
                     max={assignment.totalMarks}
                     value={gradingScore}
-                    onChange={(e) => setGradingScore(Number(e.target.value))}
-                    className="w-24 text-base font-extrabold text-center px-3 py-2 rounded-xl bg-white border border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-700"
+                    placeholder="Marks"
+                    onChange={(e) => setGradingScore(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="w-28 text-base font-extrabold text-center px-3 py-2 rounded-xl bg-white border border-purple-300 focus:outline-none focus:ring-2 focus:ring-purple-700"
                   />
                 </div>
 

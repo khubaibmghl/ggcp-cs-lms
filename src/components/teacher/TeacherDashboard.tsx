@@ -22,6 +22,9 @@ import {
   Layers,
   Award,
   BookOpen,
+  FileText,
+  Download,
+  Trash2,
 } from 'lucide-react';
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
 
@@ -48,10 +51,37 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   // Step 2: Target Audience & Details
   const [targetSections, setTargetSections] = useState<('All' | Section)[]>(['All']);
   const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
   const [totalMarks, setTotalMarks] = useState(20);
-  const [resourceFileName, setResourceFileName] = useState('');
-  const [resourceFileContent, setResourceFileContent] = useState('');
+  const [questionFile, setQuestionFile] = useState<{ name: string; size: number; dataUrl: string } | null>(null);
+
+  const handleQuestionFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const validExts = ['.pdf', '.doc', '.docx'];
+    const isDoc = validExts.some((ext) => file.name.toLowerCase().endsWith(ext));
+    if (!isDoc) {
+      setWizardError('Please upload an assignment file in PDF (.pdf) or Word (.docx, .doc) format.');
+      return;
+    }
+
+    if (file.size > 25 * 1024 * 1024) {
+      setWizardError(`File "${file.name}" exceeds the 25 MB limit.`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+      setQuestionFile({
+        name: file.name,
+        size: file.size,
+        dataUrl,
+      });
+      setWizardError(null);
+    };
+    reader.readAsDataURL(file);
+  };
 
   // Step 3: Grading & Test Cases
   const [gradingMode, setGradingMode] = useState<GradingMode>('hybrid');
@@ -139,8 +169,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
   // Complete Wizard & Publish
   const handlePublishAssignment = () => {
-    if (!title.trim() || !description.trim()) {
-      setWizardError('Please provide an assignment title and detailed instructions/description.');
+    if (!title.trim()) {
+      setWizardError('Please provide an assignment title.');
+      return;
+    }
+    if (!questionFile) {
+      setWizardError('Please upload the assignment question file in PDF (.pdf) or Word (.docx) format.');
       return;
     }
 
@@ -154,14 +188,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
       subjectName: currentSubject.name,
       targetSections: targetSections,
       title: title.trim(),
-      description: description.trim(),
+      description: `Question File: ${questionFile.name}`,
       totalMarks: Number(totalMarks),
       deadlineDate: deadlineDate, // Locks at 11:59:59 PM on this date
-      gradingMode: gradingMode,
-      testCases: testCases.filter((tc) => tc.input && tc.expectedOutput),
-      aiRubric: aiRubric,
-      resourceFileName: resourceFileName.trim() || undefined,
-      resourceFileContent: resourceFileContent.trim() || undefined,
+      gradingMode: 'manual',
+      resourceFileName: questionFile.name,
+      resourceFileContent: questionFile.dataUrl,
       createdAt: new Date().toISOString(),
     };
 
@@ -171,7 +203,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
     setWizardStep(1);
     setWizardError(null);
     setTitle('');
-    setDescription('');
+    setQuestionFile(null);
     showSuccess(
       'Assignment Published',
       `"${newAssignment.title}" is now immediately live for students in Semester ${targetSemester} (${targetSections.join(', ')}).`
@@ -307,6 +339,27 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                     <span>
                       Deadline: <strong className="text-slate-800">{asg.deadlineDate} (11:59:59 PM)</strong>
                     </span>
+
+                    {asg.resourceFileName && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!asg.resourceFileContent) return;
+                          const a = document.createElement('a');
+                          a.href = asg.resourceFileContent;
+                          a.download = asg.resourceFileName || 'Assignment_Questions.pdf';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                        }}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 text-[11px] font-bold transition"
+                        title="Download Question Paper"
+                      >
+                        <FileText className="w-3 h-3 text-purple-600" />
+                        <span className="truncate max-w-[140px]">{asg.resourceFileName}</span>
+                        <Download className="w-3 h-3" />
+                      </button>
+                    )}
                     <span>
                       Mode: <strong className="capitalize text-purple-700">{asg.gradingMode}</strong>
                     </span>
@@ -344,13 +397,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
               <div>
                 <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">
-                  Step {wizardStep} of 4
+                  Step {wizardStep} of 3
                 </span>
                 <h3 className="text-lg font-extrabold text-slate-900">
                   {wizardStep === 1 && 'Step 1: Course & Semester Selection'}
-                  {wizardStep === 2 && 'Step 2: Assignment Details & Target Sections'}
-                  {wizardStep === 3 && 'Step 3: Automated Grading & Test Cases'}
-                  {wizardStep === 4 && 'Step 4: Midnight Deadline & Instant Publish'}
+                  {wizardStep === 2 && 'Step 2: Details & Question File (PDF / Word)'}
+                  {wizardStep === 3 && 'Step 3: Midnight Deadline & Instant Publish'}
                 </h3>
               </div>
               <button
@@ -362,8 +414,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
             </div>
 
             {/* Stepper Progress Bar */}
-            <div className="grid grid-cols-4 gap-2 mb-6">
-              {[1, 2, 3, 4].map((step) => (
+            <div className="grid grid-cols-3 gap-2 mb-6">
+              {[1, 2, 3].map((step) => (
                 <div
                   key={step}
                   className={`h-1.5 rounded-full transition-all ${
@@ -539,22 +591,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Assignment Title
+                    Assignment Title *
                   </label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Assignment 02: Binary Search Tree Operations & Balancing"
+                    placeholder="e.g. Assignment 01: Programming Practice Questions"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
                     className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Total Marks
+                      Total Marks *
                     </label>
                     <input
                       type="number"
@@ -568,135 +620,61 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Starter Resource File Name (Optional)
+                      Submission Deadline Date *
                     </label>
                     <input
-                      type="text"
-                      placeholder="e.g. bst_template.cpp"
-                      value={resourceFileName}
-                      onChange={(e) => setResourceFileName(e.target.value)}
-                      className="w-full text-xs font-medium px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                      type="date"
+                      required
+                      value={deadlineDate}
+                      onChange={(e) => setDeadlineDate(e.target.value)}
+                      className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                     />
                   </div>
                 </div>
 
+                {/* Upload Question File (PDF or Word .docx) */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Detailed Assignment Prompt / Problem Statement
+                    Upload Assignment Question File (PDF or Word .docx) *
                   </label>
-                  <textarea
-                    rows={4}
-                    required
-                    placeholder="Describe problem requirements, input/output formats, constraints, and instructions..."
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                  />
+                  <div className="border-2 border-dashed border-purple-200 bg-purple-50/50 rounded-2xl p-6 text-center hover:bg-purple-50 transition cursor-pointer relative">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      onChange={handleQuestionFileUpload}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                    />
+                    <FileText className="w-8 h-8 text-purple-600 mx-auto mb-2" />
+                    {questionFile ? (
+                      <div className="space-y-1">
+                        <p className="text-xs font-extrabold text-purple-900 flex items-center justify-center gap-1.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          {questionFile.name}
+                        </p>
+                        <p className="text-[11px] text-slate-500 font-mono">
+                          {questionFile.size >= 1024 * 1024
+                            ? `${(questionFile.size / (1024 * 1024)).toFixed(1)} MB`
+                            : `${Math.round(questionFile.size / 1024)} KB`}{' '}
+                          • Click or drag to replace file
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="text-xs font-bold text-slate-800">
+                          Click or drag the official Assignment Question Document
+                        </p>
+                        <p className="text-[11px] text-slate-400 mt-1">
+                          Only PDF (.pdf) and Microsoft Word (.docx, .doc) files are accepted
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* --- STEP 3: Automated Grading & Test Cases --- */}
+            {/* --- STEP 3: Midnight Deadline & Instant Publish --- */}
             {wizardStep === 3 && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Grading & Evaluation Strategy
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { id: 'hybrid', label: 'Hybrid (Test Cases + AI Rubric)' },
-                      { id: 'testcases', label: 'Test Cases Only' },
-                      { id: 'ai_rubric', label: 'AI Rubric Assistance Only' },
-                      { id: 'manual', label: 'Purely Manual Grading' },
-                    ].map((mode) => (
-                      <button
-                        type="button"
-                        key={mode.id}
-                        onClick={() => setGradingMode(mode.id as GradingMode)}
-                        className={`p-2.5 rounded-xl text-xs font-bold border text-left transition ${
-                          gradingMode === mode.id
-                            ? 'bg-purple-50 text-purple-900 border-purple-500 ring-2 ring-purple-200'
-                            : 'bg-slate-50 text-slate-600 border-slate-200'
-                        }`}
-                      >
-                        {mode.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Test cases builder */}
-                {(gradingMode === 'hybrid' || gradingMode === 'testcases') && (
-                  <div className="space-y-3 pt-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-bold text-slate-800">
-                        Input / Output Test Cases ({testCases.length})
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleAddTestCase}
-                        className="text-xs text-purple-700 font-bold hover:underline"
-                      >
-                        + Add Test Case
-                      </button>
-                    </div>
-
-                    <div className="space-y-2">
-                      {testCases.map((tc, idx) => (
-                        <div key={tc.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 grid grid-cols-3 gap-2">
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold">Input #{idx + 1}</span>
-                            <input
-                              type="text"
-                              placeholder="e.g. 5"
-                              value={tc.input}
-                              onChange={(e) => {
-                                const updated = [...testCases];
-                                updated[idx].input = e.target.value;
-                                setTestCases(updated);
-                              }}
-                              className="w-full text-xs font-mono px-2 py-1.5 rounded-lg border border-slate-200"
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold">Expected Output</span>
-                            <input
-                              type="text"
-                              placeholder="e.g. 120"
-                              value={tc.expectedOutput}
-                              onChange={(e) => {
-                                const updated = [...testCases];
-                                updated[idx].expectedOutput = e.target.value;
-                                setTestCases(updated);
-                              }}
-                              className="w-full text-xs font-mono px-2 py-1.5 rounded-lg border border-slate-200"
-                            />
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold">Marks</span>
-                            <input
-                              type="number"
-                              min={1}
-                              value={tc.points}
-                              onChange={(e) => {
-                                const updated = [...testCases];
-                                updated[idx].points = Number(e.target.value);
-                                setTestCases(updated);
-                              }}
-                              className="w-full text-xs font-bold px-2 py-1.5 rounded-lg border border-slate-200"
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* --- STEP 4: Midnight Deadline & Instant Publish --- */}
-            {wizardStep === 4 && (
               <div className="space-y-4">
                 <div className="bg-purple-900 text-white p-5 rounded-2xl shadow-inner space-y-2">
                   <div className="flex items-center gap-2">
@@ -708,34 +686,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Select Due Date
-                  </label>
-                  <input
-                    type="date"
-                    required
-                    value={deadlineDate}
-                    onChange={(e) => setDeadlineDate(e.target.value)}
-                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                  />
-                  <span className="text-[11px] text-slate-400 mt-1 block">
-                    Lock Time: Automatically locked at 11:59:59 PM (Midnight)
-                  </span>
-                </div>
-
-                {/* Instant Publishing Summary */}
                 <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-xs">
                   <p className="font-bold text-slate-800">Publishing Summary:</p>
                   <ul className="list-disc list-inside text-slate-600 space-y-1">
                     <li>Course: {currentSubject.code} - {currentSubject.name}</li>
                     <li>Semester: BS CS Semester {targetSemester}</li>
                     <li>Target Sections: {targetSections.join(', ')}</li>
-                    <li>Evaluation Mode: {gradingMode}</li>
-                    <li>Deadline: {deadlineDate} at 11:59:59 PM</li>
+                    <li>Total Marks: {totalMarks}</li>
+                    <li>Question Document: {questionFile?.name || 'Attached Document'}</li>
+                    <li>Deadline: {deadlineDate} at 11:59:59 PM (Midnight)</li>
                   </ul>
                   <p className="text-[11px] text-emerald-700 font-semibold pt-1">
-                    ✓ Immediate availability: As soon as you click Publish, this assignment will be live on all matching student dashboards.
+                    ✓ Immediate availability: As soon as you click Publish, this assignment will be live for all matching students.
                   </p>
                 </div>
               </div>
@@ -756,23 +718,36 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                 Back
               </button>
 
-              {wizardStep < 4 ? (
+              {wizardStep < 3 ? (
                 <button
                   type="button"
-                  onClick={() => setWizardStep((prev) => (prev + 1) as any)}
-                  className="inline-flex items-center gap-1 px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold shadow-md shadow-purple-900/20"
+                  onClick={() => {
+                    if (wizardStep === 2) {
+                      if (!title.trim()) {
+                        setWizardError('Please enter an assignment title.');
+                        return;
+                      }
+                      if (!questionFile) {
+                        setWizardError('Please upload the assignment question file in PDF (.pdf) or Word (.docx) format.');
+                        return;
+                      }
+                    }
+                    setWizardError(null);
+                    setWizardStep((prev) => (prev + 1) as any);
+                  }}
+                  className="px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-1 shadow-xs"
                 >
-                  Continue to Step {wizardStep + 1}
+                  Continue
                   <ChevronRight className="w-4 h-4" />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={handlePublishAssignment}
-                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-lg shadow-emerald-900/20"
+                  className="px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-900/20"
                 >
-                  <CheckCircle2 className="w-4 h-4" />
-                  Publish Assignment Immediately
+                  <Sparkles className="w-4 h-4" />
+                  Publish Assignment Now
                 </button>
               )}
             </div>

@@ -39,12 +39,24 @@ export async function uploadFileToCloudinary(
   }
 
   try {
+    const isDoc =
+      fileName.toLowerCase().endsWith('.pdf') ||
+      fileName.toLowerCase().endsWith('.docx') ||
+      fileName.toLowerCase().endsWith('.doc') ||
+      fileDataUrl.startsWith('data:application/pdf') ||
+      fileDataUrl.startsWith('data:application/msword') ||
+      fileDataUrl.startsWith('data:application/vnd.openxmlformats');
+
+    const endpoint = isDoc
+      ? `https://api.cloudinary.com/v1_1/${cloudName}/raw/upload`
+      : `https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`;
+
     const formData = new FormData();
     formData.append('file', fileDataUrl);
     formData.append('upload_preset', uploadPreset);
     formData.append('folder', 'ggcp_lms/submissions');
 
-    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+    const res = await fetch(endpoint, {
       method: 'POST',
       body: formData,
     });

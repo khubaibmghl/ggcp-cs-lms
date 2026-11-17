@@ -23,6 +23,7 @@ import {
   Trash2,
   Flame,
   Loader2,
+  Download,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -218,17 +219,24 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
     });
   };
 
-  // File Upload Handler (with Ultra-HD ~1 MB Optimizer)
+  // Solution Document Upload Handler (PDF or Word .docx ONLY)
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     const rawFiles = Array.from(files);
 
-    // Initial individual raw file check (allows up to 25 MB camera photos before optimization)
+    // Validate: Only PDF or Word documents
+    const validExts = ['.pdf', '.doc', '.docx'];
     for (const file of rawFiles) {
+      const isDoc = validExts.some((ext) => file.name.toLowerCase().endsWith(ext));
+      if (!isDoc) {
+        setSubmissionError(`Invalid file: "${file.name}". Only PDF (.pdf) and Microsoft Word (.docx, .doc) files are allowed.`);
+        showError('Invalid Format', 'Only PDF (.pdf) or Word (.docx, .doc) files are accepted.');
+        return;
+      }
       if (file.size > 25 * 1024 * 1024) {
-        setSubmissionError(`File "${file.name}" exceeds the 25 MB maximum upload limit.`);
+        setSubmissionError(`File "${file.name}" exceeds the 25 MB limit.`);
         showError('File Too Large', `File "${file.name}" exceeds 25 MB.`);
         return;
       }
@@ -238,51 +246,53 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
     setSubmissionError(null);
 
     try {
-      const optimized = await Promise.all(rawFiles.map((f) => optimizeFileForSubmission(f)));
+      // 1. Read files into base64 dataUrl
+      const readDocs: UploadedFile[] = await Promise.all(
+        rawFiles.map((file) => {
+          return new Promise<UploadedFile>((resolve) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              const dataUrl = typeof reader.result === 'string' ? reader.result : '';
+              resolve({
+                name: file.name,
+                size: file.size,
+                type: file.type || 'application/pdf',
+                dataUrl: dataUrl,
+              });
+            };
+            reader.onerror = () => {
+              resolve({ name: file.name, size: file.size, type: file.type });
+            };
+            reader.readAsDataURL(file);
+          });
+        })
+      );
 
-      // If Cloudinary 25 GB cloud is configured, upload directly to the cloud bucket!
+      // 2. Upload to Cloudinary if configured, BUT PRESERVE dataUrl (prevents 401 ACL download failures!)
       const processed: UploadedFile[] = await Promise.all(
-        optimized.map(async (file) => {
+        readDocs.map(async (file) => {
           if (file.dataUrl && isCloudinaryConfigured()) {
             const cloudRes = await uploadFileToCloudinary(file.dataUrl, file.name);
             return {
               ...file,
               url: cloudRes.url,
-              dataUrl: cloudRes.url,
-              size: cloudRes.bytes,
+              dataUrl: file.dataUrl, // KEEP BASE64 DATAURL SAFE FOR 100% RELIABLE DOWNLOADS!
+              size: file.size,
             };
           }
           return file;
         })
       );
 
-      const currentTotal = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
-      const newTotal = processed.reduce((acc, f) => acc + f.size, 0);
-
-      // Max total bundle size: 25 MB
-      if (currentTotal + newTotal > 25 * 1024 * 1024) {
-        setSubmissionError('Total upload bundle exceeds the 25 MB limit. Please remove some files or submit fewer pages.');
-        showWarning('Size Limit Exceeded', 'Total upload bundle exceeds 25 MB limit.');
-        setIsOptimizing(false);
-        return;
-      }
-
-      setUploadedFiles((prev) => [...prev, ...processed]);
+      setUploadedFiles(processed);
       setSubmissionError(null);
-      if (isCloudinaryConfigured()) {
-        showSuccess(
-          'Saved to 25 GB Cloud Storage',
-          `${processed.length} file(s) uploaded to Cloudinary in Ultra-HD clarity.`
-        );
-      } else {
-        showSuccess(
-          'Files Added',
-          `${processed.length} file(s) attached in Ultra-HD clarity (~1 MB standard).`
-        );
-      }
+      showSuccess(
+        'Document Attached',
+        `"${processed[0]?.name}" attached as solution file.`
+      );
     } catch {
-      setSubmissionError('An error occurred while processing your files. Please try again.');
-      showError('Upload Error', 'Could not process selected files.');
+      setSubmissionError('An error occurred while uploading your document. Please try again.');
+      showError('Upload Error', 'Could not process selected file.');
     } finally {
       setIsOptimizing(false);
       e.target.value = '';
@@ -295,30 +305,13 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
 
   // Submit Assignment Handler
   const handleSubmit = () => {
-    if (!textSolution.trim() && uploadedFiles.length === 0) {
-      setSubmissionError('Please enter your code/text solution or upload solution files/handwritten images before submitting.');
-      showWarning('Incomplete Submission', 'Please provide your solution before submitting.');
+    if (uploadedFiles.length === 0) {
+      setSubmissionError('Please upload your completed solution document in PDF (.pdf) or Word (.docx) format.');
+      showWarning('Incomplete Submission', 'Please attach your solution document before submitting.');
       return;
     }
 
     if (!currentUser) return;
-
-    // Run 3-Layer Integrity Engine
-    const existingSubmissions = dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id);
-    const integrityReport = generateIntegrityReport(
-      textSolution,
-      existingSubmissions,
-      telemetry,
-      currentUser.id
-    );
-
-    // Compute automatic test cases passed if provided
-    let testCasesPassed = 0;
-    const totalTestCases = assignment.testCases?.length || 0;
-    if (totalTestCases > 0 && textSolution) {
-      // Mock runner: passes if non-empty and has reasonable length
-      testCasesPassed = textSolution.length > 50 ? totalTestCases : Math.floor(totalTestCases / 2);
-    }
 
     const newSubmission: Submission = {
       id: existingSub?.id || `sub-${Date.now()}`,
@@ -328,14 +321,26 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
       studentRollNumber: currentUser.rollNumber || 1,
       studentSemester: currentUser.semester || 1,
       studentSection: currentUser.section || 'A1',
-      textSubmission: textSolution,
+      textSubmission: '',
       files: uploadedFiles,
       submittedAt: new Date().toISOString(),
       status: 'submitted',
-      testCasesPassed: totalTestCases > 0 ? testCasesPassed : undefined,
-      testCasesTotal: totalTestCases > 0 ? totalTestCases : undefined,
-      aiSuggestedScore: Math.round(assignment.totalMarks * (integrityReport.peerPlagiarismScore > 50 ? 0.4 : 0.9)),
-      integrityReport: integrityReport,
+      // No fake AI suggested score! Teacher grades manually based on the document.
+      aiSuggestedScore: undefined,
+      integrityReport: {
+        peerPlagiarismScore: 0,
+        aiLikelihoodScore: 0,
+        aiReasoning: `Document submission (${uploadedFiles[0]?.name || 'PDF/Word'}). Solution file attached for instructor manual evaluation.`,
+        telemetry: {
+          typedCharacterCount: 0,
+          pasteEventCount: 0,
+          totalPastedCharacters: 0,
+          typingDurationSeconds: 0,
+          estimatedWPM: 0,
+          suspiciousBurstDetected: false,
+          timelineLogs: ['Document uploaded directly in official PDF/Word format.'],
+        },
+      },
     };
 
     dataStore.upsertSubmission(newSubmission);
@@ -426,28 +431,34 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
                 </div>
               </div>
 
-              {/* Starter File Download / Preview if available */}
+              {/* Question Document Download Banner */}
               {assignment.resourceFileContent && (
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
-                      <Code2 className="w-4 h-4 text-purple-600" />
-                      Starter Template ({assignment.resourceFileName})
-                    </span>
-                    <button
-                      onClick={() => {
-                        navigator.clipboard.writeText(assignment.resourceFileContent || '');
-                        showInfo('Copied to Clipboard', 'Starter code template copied.');
-                      }}
-                      className="text-purple-700 hover:underline font-bold flex items-center gap-1"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      Copy Template
-                    </button>
+                <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 truncate">
+                    <FileText className="w-8 h-8 text-purple-700 flex-shrink-0" />
+                    <div className="truncate">
+                      <h4 className="text-xs font-extrabold text-slate-900 truncate">
+                        {assignment.resourceFileName || 'Assignment Question Document'}
+                      </h4>
+                      <p className="text-[11px] text-slate-500">Official Question Paper (PDF / Word .docx)</p>
+                    </div>
                   </div>
-                  <pre className="p-3 bg-slate-900 text-emerald-400 font-mono text-xs rounded-2xl max-h-48 overflow-x-auto border border-slate-800">
-                    {assignment.resourceFileContent}
-                  </pre>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!assignment.resourceFileContent) return;
+                      const link = document.createElement('a');
+                      link.href = assignment.resourceFileContent;
+                      link.download = assignment.resourceFileName || 'Assignment_Questions.pdf';
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs flex-shrink-0"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    Download Question Paper
+                  </button>
                 </div>
               )}
 
@@ -471,160 +482,77 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
             </div>
           )}
 
-          {/* --- STEP 2: Solution Input & Real-Time Telemetry --- */}
+          {/* --- STEP 2: Solution Document Upload (PDF or Word .docx ONLY) --- */}
           {step === 2 && (
             <div className="space-y-4">
-              {/* Telemetry Live Indicator Bar */}
-              <div className="bg-slate-900 text-slate-200 rounded-2xl p-3 px-4 flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span className="text-slate-300">Live Input Telemetry:</span>
-                </div>
-                <div className="flex items-center gap-3 text-[11px]">
-                  <span>Typed: <strong className="text-emerald-400">{telemetry.typedCharacterCount} chars</strong></span>
-                  <span>Pastes: <strong className={telemetry.pasteEventCount > 2 ? 'text-amber-400' : 'text-slate-300'}>{telemetry.pasteEventCount}</strong></span>
-                  <span>Active: <strong className="text-purple-300">{telemetry.typingDurationSeconds}s</strong></span>
-                  <span>WPM: <strong className="text-slate-300">{telemetry.estimatedWPM}</strong></span>
-                </div>
-                {telemetry.suspiciousBurstDetected && (
-                  <span className="text-[10px] bg-rose-600 text-white font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                    <Flame className="w-3 h-3" />
-                    Burst Paste Logged
-                  </span>
+              <div className="border-2 border-dashed border-purple-200 bg-purple-50/40 rounded-2xl p-8 text-center hover:bg-purple-50 transition cursor-pointer relative">
+                <input
+                  type="file"
+                  multiple={false}
+                  disabled={isOptimizing}
+                  accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleFileUpload}
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
+                />
+                {isOptimizing ? (
+                  <div className="flex flex-col items-center justify-center py-2">
+                    <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-2" />
+                    <p className="text-xs font-bold text-purple-900">
+                      Attaching solution document...
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <UploadCloud className="w-10 h-10 text-purple-600 mx-auto mb-2" />
+                    <p className="text-sm font-extrabold text-slate-800">
+                      Click or drag your completed assignment solution here
+                    </p>
+                    <p className="text-xs text-purple-700 font-semibold mt-1">
+                      Accepted formats: <strong>PDF (.pdf)</strong> or <strong>Microsoft Word (.docx, .doc)</strong>
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Official document upload only • Max file size: 25 MB
+                    </p>
+                  </>
                 )}
               </div>
 
-              {/* Mode Switcher: Code/Text vs File/Image Upload */}
-              <div className="flex items-center space-x-2 border-b border-slate-200 pb-2">
-                <button
-                  type="button"
-                  onClick={() => setInputMode('text')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                    inputMode === 'text'
-                      ? 'bg-purple-700 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <Code2 className="w-4 h-4" />
-                  Direct Code / Text Solution
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setInputMode('files')}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                    inputMode === 'files'
-                      ? 'bg-purple-700 text-white shadow-xs'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                  }`}
-                >
-                  <ImageIcon className="w-4 h-4" />
-                  Upload Images / Files ({uploadedFiles.length})
-                </button>
-              </div>
-
-              {/* Text / Code Editor */}
-              {inputMode === 'text' && (
-                <div className="space-y-1.5">
-                  <div className="flex justify-between text-xs text-slate-500">
-                    <span>Write or compose your solution below:</span>
-                    <span>{textSolution.length} characters</span>
-                  </div>
-                  <textarea
-                    rows={12}
-                    placeholder="// Write your code or text solution here...
-#include <iostream>
-using namespace std;
-
-int main() {
-    // Your implementation
-    return 0;
-}"
-                    value={textSolution}
-                    onChange={handleTextChange}
-                    onPaste={handlePaste}
-                    className="w-full font-mono text-xs p-4 rounded-2xl bg-slate-950 text-emerald-400 border border-slate-800 focus:outline-none focus:ring-2 focus:ring-purple-600 resize-y"
-                  />
-                  <p className="text-[11px] text-slate-400 italic">
-                    Tip: System monitors organic typing cadence vs sudden copy-paste bursts to maintain integrity.
-                  </p>
-                </div>
-              )}
-
-              {/* File & Handwritten Photo Uploads */}
-              {inputMode === 'files' && (
-                <div className="space-y-4">
-                  <div className="border-2 border-dashed border-purple-200 bg-purple-50/40 rounded-2xl p-6 text-center hover:bg-purple-50 transition cursor-pointer relative">
-                    <input
-                      type="file"
-                      multiple
-                      disabled={isOptimizing}
-                      accept="image/*,.pdf,.cpp,.c,.py,.java,.zip,.txt"
-                      onChange={handleFileUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
-                    />
-                    {isOptimizing ? (
-                      <div className="flex flex-col items-center justify-center py-2">
-                        <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-2" />
-                        <p className="text-xs font-bold text-purple-900">
-                          Optimizing photos to Ultra-HD (~1 MB standard)...
-                        </p>
-                        <p className="text-[11px] text-purple-600 mt-1">
-                          Preserving 100% handwriting clarity for faculty evaluation
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <UploadCloud className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                        <p className="text-xs font-bold text-slate-800">
-                          Click or drag photos of handwritten work, code files, or PDFs
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-1">
-                          {isCloudinaryConfigured()
-                            ? '25 GB Cloud Storage Active • Ultra-HD ~1 MB standard • Direct CDN upload'
-                            : 'Ultra-HD ~1 MB Smart Optimizer enabled • Files ≤ 1 MB kept untouched • Up to 25 MB bundle'}
-                        </p>
-                      </>
-                    )}
-                  </div>
-
-                  {/* Uploaded Files Grid */}
-                  {uploadedFiles.length > 0 && (
-                    <div className="space-y-2">
-                      <span className="text-xs font-bold text-slate-700">Attached Files:</span>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {uploadedFiles.map((file, idx) => (
-                          <div
-                            key={idx}
-                            className="p-3 bg-white rounded-xl border border-slate-200 flex items-center justify-between text-xs shadow-2xs"
-                          >
-                            <div className="flex items-center gap-2 truncate">
-                              {file.type.startsWith('image/') ? (
-                                <ImageIcon className="w-4 h-4 text-purple-600 flex-shrink-0" />
-                              ) : (
-                                <FileText className="w-4 h-4 text-indigo-600 flex-shrink-0" />
-                              )}
-                              <span className="font-semibold text-slate-800 truncate">
-                                {file.name}
-                              </span>
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                ({file.size >= 1024 * 1024
-                                  ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-                                  : `${Math.round(file.size / 1024)} KB`})
-                              </span>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => removeFile(idx)}
-                              className="text-rose-500 hover:text-rose-700 p-1"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+              {/* Uploaded Document List */}
+              {uploadedFiles.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-xs font-bold text-slate-700">Attached Solution Document:</span>
+                  <div className="space-y-2">
+                    {uploadedFiles.map((file, idx) => (
+                      <div
+                        key={idx}
+                        className="p-4 bg-white rounded-2xl border border-purple-200 flex items-center justify-between text-xs shadow-2xs"
+                      >
+                        <div className="flex items-center gap-3 truncate">
+                          <FileText className="w-7 h-7 text-purple-700 flex-shrink-0" />
+                          <div className="truncate">
+                            <span className="font-extrabold text-slate-800 truncate block text-xs">
+                              {file.name}
+                            </span>
+                            <span className="text-[11px] text-slate-400 font-mono">
+                              {file.size >= 1024 * 1024
+                                ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+                                : `${Math.round(file.size / 1024)} KB`}{' '}
+                              • Ready for submission
+                            </span>
                           </div>
-                        ))}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => removeFile(idx)}
+                          className="text-rose-500 hover:text-rose-700 p-2 rounded-xl hover:bg-rose-50 transition"
+                          title="Remove file"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                    </div>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -644,31 +572,16 @@ int main() {
                 </p>
               </div>
 
-              {/* Summary Stats */}
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-slate-400 block text-[11px]">Direct Solution</span>
-                  <strong className="text-slate-800">
-                    {textSolution.length > 0 ? `${textSolution.length} characters entered` : 'None (Files only)'}
-                  </strong>
-                </div>
-
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                  <span className="text-slate-400 block text-[11px]">Attached Files</span>
-                  <strong className="text-slate-800">{uploadedFiles.length} file(s) attached</strong>
-                </div>
-              </div>
-
-              {/* Telemetry Summary */}
-              <div className="p-4 bg-slate-900 text-slate-200 rounded-2xl text-xs space-y-1.5 font-mono">
-                <div className="flex items-center justify-between text-purple-300 font-bold">
-                  <span>Integrity & Telemetry Status:</span>
-                  <span>Audit Logged</span>
-                </div>
-                <p className="text-[11px] text-slate-400">
-                  • Active Typing Time: {telemetry.typingDurationSeconds} seconds<br />
-                  • Total Pastes: {telemetry.pasteEventCount} events ({telemetry.totalPastedCharacters} chars)<br />
-                  • Estimated Cadence: {telemetry.estimatedWPM} WPM
+              {/* Summary of Document */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1">
+                <span className="text-slate-400 block text-[11px] font-bold uppercase tracking-wider">
+                  Solution Document Attached:
+                </span>
+                <strong className="text-purple-900 font-extrabold text-sm block">
+                  {uploadedFiles[0]?.name || 'Document Attached'}
+                </strong>
+                <p className="text-[11px] text-slate-500">
+                  Official solution document attached for instructor evaluation.
                 </p>
               </div>
 
