@@ -11,27 +11,41 @@ import {
   CheckCircle2,
   Copy,
   ArrowRight,
+  Eye,
+  EyeOff,
+  ShieldCheck,
+  Sparkles,
+  BookOpen,
+  FileCheck2,
+  Users2,
+  Check,
+  Building2,
+  HelpCircle,
+  Sparkle,
 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const { login, registerStudent, users } = useAuth();
 
-  // Mode: 'login' or 'register' (completely separate clean views)
+  // Mode: 'login' or 'register'
   const [mode, setMode] = useState<'login' | 'register'>('login');
 
   // Login State
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Register State
   const [name, setName] = useState('');
   const [fatherName, setFatherName] = useState('');
   const [semester, setSemester] = useState<SemesterNumber>(1);
   const [section, setSection] = useState<Section>('A1');
-  const [rollNumber, setRollNumber] = useState<number>(1);
+  const [rollNumber, setRollNumber] = useState<number | string>(1);
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
 
   // Real-time check for duplicate student in the SAME class (Semester + Section)
@@ -53,20 +67,31 @@ export const LoginPage: React.FC = () => {
   const [issuedStudentId, setIssuedStudentId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
+  // Quick Demo Autofill Helper
+  const handleQuickFill = (id: string, pass: string) => {
+    setIdentifier(id);
+    setPassword(pass);
+    setLoginError(null);
+  };
+
   // Handle Login Submit
   const handleLoginSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
 
     if (!identifier.trim() || !password) {
-      setLoginError('Please enter your User ID and password.');
+      setLoginError('Please enter your official User ID and password.');
       return;
     }
 
-    const res = login(identifier.trim(), password);
-    if (!res.success) {
-      setLoginError(res.message || 'Invalid credentials.');
-    }
+    setIsLoggingIn(true);
+    setTimeout(() => {
+      const res = login(identifier.trim(), password);
+      setIsLoggingIn(false);
+      if (!res.success) {
+        setLoginError(res.message || 'Invalid User ID or password. Please verify credentials.');
+      }
+    }, 250);
   };
 
   // Handle Register Submit
@@ -75,7 +100,7 @@ export const LoginPage: React.FC = () => {
     setRegError(null);
 
     if (!name.trim() || !fatherName.trim()) {
-      setRegError('Please enter full student name and father name.');
+      setRegError('Please provide your full student name and father name.');
       return;
     }
 
@@ -92,7 +117,7 @@ export const LoginPage: React.FC = () => {
 
     if (duplicateStudent) {
       setRegError(
-        `Roll Number ${rollNum} is already registered in Semester ${semester} (Section ${section}) to "${duplicateStudent.name}". Please enter your correct official roll number or contact your class teacher.`
+        `Roll Number ${rollNum} is already registered in Semester ${semester} (Section ${section}) to "${duplicateStudent.name}". Each student in a class must have a unique roll number.`
       );
       return;
     }
@@ -133,335 +158,578 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col justify-between relative overflow-hidden">
-      {/* Top Header */}
-      <header className="relative z-10 max-w-7xl w-full mx-auto px-6 py-6 flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 flex items-center justify-center text-white shadow-lg">
-            <GraduationCap className="w-6 h-6" />
+    <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col lg:flex-row overflow-x-hidden selection:bg-purple-600 selection:text-white">
+      {/* ========================================================================= */}
+      {/* LEFT PANEL: HERO BRANDING & CAMPUS SHOWCASE (Desktop 50%, hidden on mob) */}
+      {/* ========================================================================= */}
+      <div className="relative hidden lg:flex lg:w-1/2 flex-col justify-between p-12 xl:p-16 overflow-hidden border-r border-slate-800/80">
+        {/* Background Campus Photograph with Rich Collegiate Overlay */}
+        <div
+          className="absolute inset-0 bg-cover bg-center transition-transform duration-1000 scale-105"
+          style={{
+            backgroundImage: "url('/campus-hero.jpg')",
+          }}
+        />
+        {/* Deep Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/85 to-purple-950/75 backdrop-blur-[1px]" />
+        {/* Subtle Decorative Pattern */}
+        <div className="absolute inset-0 opacity-10 bg-[radial-gradient(#a855f7_1px,transparent_1px)] [background-size:20px_20px]" />
+
+        {/* Top Header Badge */}
+        <div className="relative z-10 flex items-center justify-between">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-purple-600 via-indigo-600 to-purple-400 p-0.5 shadow-xl shadow-purple-950/50 flex items-center justify-center">
+              <div className="w-full h-full bg-slate-950/80 rounded-[14px] flex items-center justify-center backdrop-blur-xs">
+                <GraduationCap className="w-6 h-6 text-purple-400" />
+              </div>
+            </div>
+            <div>
+              <span className="font-black text-xl text-white tracking-tight block">
+                Govt. Graduate College <span className="text-purple-400">Pasrur</span>
+              </span>
+              <p className="text-xs text-purple-200/80 font-medium">Department of Computer Science • LMS</p>
+            </div>
           </div>
-          <div>
-            <span className="font-black text-xl text-white tracking-tight">
-              GGC <span className="text-purple-400">Pasrur</span>
-            </span>
-            <p className="text-[11px] text-slate-400">Department of Computer Science • LMS</p>
-          </div>
+
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-md border border-white/10 text-xs font-semibold text-purple-200">
+            <Sparkle className="w-3.5 h-3.5 text-purple-400 fill-purple-400" />
+            BSCS Portal 2024-2028
+          </span>
         </div>
 
-        <button
-          onClick={() => {
-            setMode(mode === 'login' ? 'register' : 'login');
-            setLoginError(null);
-            setRegError(null);
-            setIssuedStudentId(null);
-          }}
-          className="text-xs font-bold text-white bg-white/10 hover:bg-white/20 px-4 py-2 rounded-xl transition border border-white/10"
-        >
-          {mode === 'login' ? 'Student Registration' : 'Back to Sign In'}
-        </button>
-      </header>
+        {/* Center Hero Information */}
+        <div className="relative z-10 my-auto py-12 space-y-6 max-w-xl">
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-300 text-xs font-bold uppercase tracking-wider">
+            <ShieldCheck className="w-4 h-4 text-purple-400" />
+            Official Academic Evaluation System
+          </div>
 
-      {/* Main Container */}
-      <main className="relative z-10 max-w-md w-full mx-auto px-4 py-8">
-        <div className="bg-white rounded-3xl p-6 sm:p-8 shadow-2xl border border-slate-100">
-          {/* ============================================================ */}
-          {/* VIEW A: CLEAN SIGN IN PAGE                                  */}
-          {/* ============================================================ */}
-          {mode === 'login' && (
-            <div className="space-y-6">
-              <div className="text-center">
-                <h1 className="text-2xl font-black text-slate-900 tracking-tight">Sign In</h1>
-                <p className="text-xs text-slate-500 mt-1">Enter your credentials to access your portal</p>
+          <h1 className="text-3xl xl:text-5xl font-black text-white leading-tight tracking-tight">
+            Academic Excellence Through{' '}
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-300 to-indigo-300">
+              Modern Technology
+            </span>
+          </h1>
+
+          <p className="text-sm xl:text-base text-slate-300 leading-relaxed">
+            Welcome to the centralized student assignment submission, document evaluation, and academic integrity management portal for Govt. Graduate College Pasrur.
+          </p>
+
+          {/* 3 Value Proposition Features */}
+          <div className="grid grid-cols-1 gap-3.5 pt-4">
+            <div className="p-4 rounded-2xl bg-slate-900/70 backdrop-blur-md border border-white/10 flex items-start gap-3.5 shadow-lg">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <FileCheck2 className="w-5 h-5" />
               </div>
-
-              {loginError && (
-                <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                  <span>{loginError}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleLoginSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    User ID
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      required
-                      placeholder="User ID"
-                      value={identifier}
-                      onChange={(e) => setIdentifier(e.target.value)}
-                      className="w-full text-xs font-medium pl-10 pr-3.5 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                    />
-                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Password
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="password"
-                      required
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full text-xs font-medium pl-10 pr-3.5 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                    />
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-3.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md transition"
-                >
-                  Sign In
-                </button>
-              </form>
-
-              <div className="pt-2 border-t border-slate-100 text-center">
-                <p className="text-xs text-slate-600">
-                  New student?{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMode('register');
-                      setLoginError(null);
-                    }}
-                    className="font-bold text-purple-700 hover:underline"
-                  >
-                    Register here
-                  </button>
+              <div>
+                <h2 className="text-xs font-bold text-white uppercase tracking-wide">Document-Based Submissions</h2>
+                <p className="text-xs text-slate-400 mt-0.5 leading-snug">
+                  Official PDF & Word question paper distribution with strict 11:59 PM deadline lockouts and instant instructor grading.
                 </p>
               </div>
             </div>
-          )}
 
-          {/* ============================================================ */}
-          {/* VIEW B: CLEAN STUDENT SIGN UP PAGE                          */}
-          {/* ============================================================ */}
-          {mode === 'register' && (
-            <div className="space-y-5">
-              {issuedStudentId ? (
-                /* Registration Success Screen */
-                <div className="text-center space-y-4">
-                  <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto">
-                    <CheckCircle2 className="w-7 h-7" />
+            <div className="p-4 rounded-2xl bg-slate-900/70 backdrop-blur-md border border-white/10 flex items-start gap-3.5 shadow-lg">
+              <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xs font-bold text-white uppercase tracking-wide">Integrity & Telemetry Auditing</h2>
+                <p className="text-xs text-slate-400 mt-0.5 leading-snug">
+                  3-layer peer plagiarism analysis, suspicious burst detection, and comprehensive telemetry for authentic student assessment.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900/70 backdrop-blur-md border border-white/10 flex items-start gap-3.5 shadow-lg">
+              <div className="w-9 h-9 rounded-xl bg-pink-500/20 text-pink-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+                <Users2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-xs font-bold text-white uppercase tracking-wide">Multi-Section Roster Management</h2>
+                <p className="text-xs text-slate-400 mt-0.5 leading-snug">
+                  Per-section tracking for Sections A1, A2, and B across all 8 semesters with strict duplicate roll number safeguards.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom Collegiate Accreditation Badge */}
+        <div className="relative z-10 pt-6 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+          <div className="flex items-center gap-2">
+            <Building2 className="w-4 h-4 text-purple-400" />
+            <span>Govt. Graduate College Pasrur • District Sialkot</span>
+          </div>
+          <span className="font-mono text-[11px] text-slate-500">Affiliated with HED Punjab</span>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* RIGHT PANEL: INTERACTIVE AUTH & REGISTRATION FORM (Full width on mob/tab) */}
+      {/* ========================================================================= */}
+      <div className="flex-1 flex flex-col justify-between p-4 sm:p-8 lg:p-12 xl:p-16 relative">
+        {/* Subtle Ambient Background Glows */}
+        <div className="absolute top-0 right-0 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-0 left-0 w-80 h-80 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        {/* Mobile & Tablet Header (Hidden on Large Desktops) */}
+        <div className="lg:hidden flex items-center justify-between mb-8 pb-4 border-b border-slate-800">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-600 flex items-center justify-center text-white shadow-md">
+              <GraduationCap className="w-5 h-5" />
+            </div>
+            <div>
+              <span className="font-extrabold text-base text-white tracking-tight">GGC Pasrur</span>
+              <p className="text-[10px] text-purple-300">BS Computer Science LMS</p>
+            </div>
+          </div>
+
+          <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
+            HED Punjab
+          </span>
+        </div>
+
+        {/* Center Card Container */}
+        <div className="my-auto w-full max-w-lg mx-auto">
+          {/* Main Card */}
+          <div className="bg-slate-900/90 backdrop-blur-2xl rounded-3xl p-6 sm:p-10 shadow-2xl border border-slate-800 relative overflow-hidden">
+            {/* Top Accent Gradient Border */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-purple-500 via-indigo-500 to-pink-500" />
+
+            {/* Segmented Switcher Pill Controls (Sign In vs Student Registration) */}
+            <div className="bg-slate-950 p-1.5 rounded-2xl border border-slate-800 mb-8 flex items-center shadow-inner">
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('login');
+                  setLoginError(null);
+                  setRegError(null);
+                  setIssuedStudentId(null);
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
+                  mode === 'login'
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <User className="w-3.5 h-3.5" />
+                Sign In
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setMode('register');
+                  setLoginError(null);
+                  setRegError(null);
+                  setIssuedStudentId(null);
+                }}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-extrabold transition-all duration-200 flex items-center justify-center gap-2 ${
+                  mode === 'register'
+                    ? 'bg-purple-600 text-white shadow-md shadow-purple-950/40'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <GraduationCap className="w-4 h-4" />
+                Student Registration
+              </button>
+            </div>
+
+            {/* ================================================================ */}
+            {/* VIEW A: SIGN IN FORM                                            */}
+            {/* ================================================================ */}
+            {mode === 'login' && (
+              <div className="space-y-6 animate-in fade-in duration-200">
+                <div>
+                  <h2 className="text-2xl font-black text-white tracking-tight">Welcome Back</h2>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Enter your official ID and password to access your course portal.
+                  </p>
+                </div>
+
+                {/* Error Banner */}
+                {loginError && (
+                  <div className="p-3.5 rounded-2xl bg-rose-950/50 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2.5 animate-in fade-in">
+                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span className="font-medium">{loginError}</span>
                   </div>
+                )}
 
+                <form onSubmit={handleLoginSubmit} className="space-y-4">
+                  {/* User ID / Identifier Input */}
                   <div>
-                    <h2 className="text-xl font-black text-slate-900">Registration Successful</h2>
-                    <p className="text-xs text-slate-500 mt-0.5">Please save your assigned Student Login ID</p>
+                    <label className="block text-xs font-bold text-slate-300 mb-1.5 uppercase tracking-wider">
+                      Official User ID / Roll Number
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. BCS1-A1-001, admin, or faculty"
+                        value={identifier}
+                        onChange={(e) => setIdentifier(e.target.value)}
+                        className="w-full text-xs font-semibold pl-10 pr-4 py-3.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
+                      />
+                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-4" />
+                    </div>
                   </div>
 
-                  <div className="bg-purple-50 border-2 border-purple-300 rounded-2xl p-4 text-center space-y-1">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-700">
-                      Your Student Login ID
-                    </span>
-                    <div className="flex items-center justify-center gap-2">
-                      <span className="text-2xl font-black font-mono text-purple-950">
-                        {issuedStudentId}
+                  {/* Password Input with Show/Hide Toggle */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                        Password
+                      </label>
+                      <span className="text-[11px] text-purple-400 hover:text-purple-300 cursor-pointer transition">
+                        Help & Support
                       </span>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        required
+                        placeholder="••••••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full text-xs font-semibold pl-10 pr-10 py-3.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
+                      />
+                      <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-4" />
                       <button
-                        onClick={handleCopyId}
-                        className="p-1 rounded-lg bg-white border border-purple-200 hover:bg-purple-100 text-purple-700"
-                        title="Copy ID"
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3.5 top-3.5 text-slate-400 hover:text-white transition p-0.5"
+                        tabIndex={-1}
                       >
-                        <Copy className="w-4 h-4" />
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
-                    {copied && (
-                      <span className="text-[10px] font-bold text-emerald-600 block">Copied!</span>
-                    )}
                   </div>
 
+                  {/* Sign In Submit Button */}
                   <button
-                    onClick={() => {
-                      setIdentifier(issuedStudentId);
-                      setPassword('');
-                      setMode('login');
-                      setIssuedStudentId(null);
-                    }}
-                    className="w-full py-3 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md"
+                    type="submit"
+                    disabled={isLoggingIn}
+                    className="w-full py-3.5 rounded-xl bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 text-white font-extrabold text-xs shadow-lg shadow-purple-950/50 flex items-center justify-center gap-2 transition duration-150 hover:scale-[1.01] active:scale-[0.99] disabled:opacity-75"
                   >
-                    Proceed to Sign In
-                  </button>
-                </div>
-              ) : (
-                /* Registration Form */
-                <div className="space-y-4">
-                  <div className="text-center">
-                    <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                      Student Registration
-                    </h1>
-                    <p className="text-xs text-slate-500 mt-1">Create your student portal account</p>
-                  </div>
-
-                  {regError && (
-                    <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                      <span>{regError}</span>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleRegisterSubmit} className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Student Full Name
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Ahmad Ali"
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Father Name
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. Muhammad Ali"
-                        value={fatherName}
-                        onChange={(e) => setFatherName(e.target.value)}
-                        className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Semester</label>
-                        <select
-                          value={semester}
-                          onChange={(e) => setSemester(Number(e.target.value) as SemesterNumber)}
-                          className="w-full text-xs font-bold px-2 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                        >
-                          {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-                            <option key={s} value={s}>
-                              Sem {s}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Section</label>
-                        <select
-                          value={section}
-                          onChange={(e) => setSection(e.target.value as Section)}
-                          className="w-full text-xs font-bold px-2 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                        >
-                          <option value="A1">Sec A1</option>
-                          <option value="A2">Sec A2</option>
-                          <option value="B">Sec B</option>
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Roll No (1..N)</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={250}
-                          required
-                          value={rollNumber}
-                          onChange={(e) => setRollNumber(Number(e.target.value))}
-                          className={`w-full text-xs font-bold px-2.5 py-2 rounded-xl border focus:outline-none focus:ring-2 text-slate-900 transition ${
-                            duplicateStudent
-                              ? 'border-rose-400 bg-rose-50/60 focus:ring-rose-500 text-rose-900'
-                              : 'border-slate-200 focus:ring-purple-600'
-                          }`}
-                        />
-                      </div>
-                    </div>
-
-                    {/* Inline alert if roll number is duplicate in this class */}
-                    {duplicateStudent && (
-                      <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-start gap-2.5 animate-in fade-in">
-                        <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-                        <div>
-                          <p className="font-bold">Roll #{rollNumber} is already taken in this class!</p>
-                          <p className="text-[11px] text-rose-700 mt-0.5 leading-relaxed">
-                            Already assigned to student <strong>{duplicateStudent.name}</strong> in Semester {semester} ({section}). Each student in this class must use a unique roll number.
-                          </p>
-                        </div>
-                      </div>
+                    {isLoggingIn ? (
+                      <span className="inline-flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Authenticating...
+                      </span>
+                    ) : (
+                      <>
+                        Sign In to Portal
+                        <ArrowRight className="w-4 h-4" />
+                      </>
                     )}
+                  </button>
+                </form>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="Min 6 characters"
-                          value={regPassword}
-                          onChange={(e) => setRegPassword(e.target.value)}
-                          className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                        />
+                {/* Quick Credentials Drawer for Faculty / Demo Testing */}
+                <div className="pt-4 border-t border-slate-800">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2 text-center">
+                    Quick Demo Credentials (Click to Autofill)
+                  </span>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleQuickFill('faculty', 'faculty123')}
+                      className="py-1.5 px-2 bg-slate-950/60 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-700/60 rounded-xl text-[11px] font-semibold text-slate-300 hover:text-purple-300 transition text-center truncate"
+                    >
+                      👨‍🏫 Faculty
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickFill('BCS1-A1-001', 'student123')}
+                      className="py-1.5 px-2 bg-slate-950/60 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-700/60 rounded-xl text-[11px] font-semibold text-slate-300 hover:text-purple-300 transition text-center truncate"
+                    >
+                      👨‍🎓 Student
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleQuickFill('admin', 'admin123')}
+                      className="py-1.5 px-2 bg-slate-950/60 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-700/60 rounded-xl text-[11px] font-semibold text-slate-300 hover:text-purple-300 transition text-center truncate"
+                    >
+                      👑 Admin
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ================================================================ */}
+            {/* VIEW B: STUDENT REGISTRATION FORM                               */}
+            {/* ================================================================ */}
+            {mode === 'register' && (
+              <div className="space-y-5 animate-in fade-in duration-200">
+                {issuedStudentId ? (
+                  /* --- REGISTRATION SUCCESS MODAL VIEW --- */
+                  <div className="text-center space-y-5 py-4 animate-in zoom-in-95">
+                    <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-950/30">
+                      <CheckCircle2 className="w-9 h-9" />
+                    </div>
+
+                    <div>
+                      <h2 className="text-2xl font-black text-white">Account Created!</h2>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Your official Student Portal Account has been issued.
+                      </p>
+                    </div>
+
+                    {/* Issued ID Card */}
+                    <div className="bg-slate-950/90 border-2 border-purple-500/40 rounded-3xl p-5 text-center space-y-2 shadow-xl">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-purple-400 block">
+                        Your Official Student Login ID
+                      </span>
+                      <div className="flex items-center justify-center gap-3">
+                        <span className="text-2xl sm:text-3xl font-black font-mono text-white tracking-wider">
+                          {issuedStudentId}
+                        </span>
+                        <button
+                          onClick={handleCopyId}
+                          className="p-2 rounded-xl bg-purple-600/30 hover:bg-purple-600 border border-purple-500/40 hover:border-purple-400 text-purple-200 hover:text-white transition"
+                          title="Copy ID to Clipboard"
+                        >
+                          <Copy className="w-4 h-4" />
+                        </button>
                       </div>
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">Confirm Password</label>
-                        <input
-                          type="password"
-                          required
-                          placeholder="Repeat password"
-                          value={regConfirmPassword}
-                          onChange={(e) => setRegConfirmPassword(e.target.value)}
-                          className="w-full text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600 text-slate-900"
-                        />
-                      </div>
+                      {copied ? (
+                        <span className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1">
+                          <Check className="w-3.5 h-3.5" /> Copied to clipboard!
+                        </span>
+                      ) : (
+                        <p className="text-[11px] text-slate-400">
+                          Please note or copy this ID. You will use it to log in.
+                        </p>
+                      )}
                     </div>
 
                     <button
-                      type="submit"
-                      disabled={!!duplicateStudent}
-                      className={`w-full py-3 mt-2 rounded-xl text-white font-extrabold text-xs shadow-md transition ${
-                        duplicateStudent
-                          ? 'bg-slate-400 cursor-not-allowed opacity-80'
-                          : 'bg-purple-700 hover:bg-purple-800 shadow-purple-900/20'
-                      }`}
+                      onClick={() => {
+                        setIdentifier(issuedStudentId);
+                        setPassword('');
+                        setMode('login');
+                        setIssuedStudentId(null);
+                      }}
+                      className="w-full py-3.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-extrabold text-xs shadow-lg transition flex items-center justify-center gap-2"
                     >
-                      {duplicateStudent ? `Roll #${rollNumber} is already registered` : 'Register Account'}
+                      Proceed to Sign In
+                      <ArrowRight className="w-4 h-4" />
                     </button>
-                  </form>
-
-                  <div className="pt-2 border-t border-slate-100 text-center">
-                    <p className="text-xs text-slate-600">
-                      Already have an account?{' '}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMode('login');
-                          setRegError(null);
-                        }}
-                        className="font-bold text-purple-700 hover:underline"
-                      >
-                        Sign In
-                      </button>
-                    </p>
                   </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </main>
+                ) : (
+                  /* --- REGISTRATION INPUT FORM --- */
+                  <div className="space-y-4">
+                    <div>
+                      <h2 className="text-2xl font-black text-white tracking-tight">Student Sign Up</h2>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Register with your official roll number to receive your LMS Login ID.
+                      </p>
+                    </div>
 
-      {/* Footer */}
-      <footer className="relative z-10 max-w-7xl w-full mx-auto px-4 py-6 text-center text-xs text-slate-400">
-        Govt. Graduate College Pasrur (GGC Pasrur) • BS Computer Science Assignment Portal
-      </footer>
+                    {/* Error Banner */}
+                    {regError && (
+                      <div className="p-3.5 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2.5 animate-in fade-in">
+                        <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                        <span className="font-medium leading-relaxed">{regError}</span>
+                      </div>
+                    )}
+
+                    <form onSubmit={handleRegisterSubmit} className="space-y-3.5">
+                      {/* Name & Father Name */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
+                            Student Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Ahmad Ali"
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                            className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
+                            Father&apos;s Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. Muhammad Aslam"
+                            value={fatherName}
+                            onChange={(e) => setFatherName(e.target.value)}
+                            className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20"
+                          />
+                        </div>
+                      </div>
+
+                      {/* 3-Column Class Selection: Semester, Section, Roll Number */}
+                      <div className="grid grid-cols-3 gap-2.5">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
+                            Semester
+                          </label>
+                          <select
+                            value={semester}
+                            onChange={(e) => setSemester(Number(e.target.value) as SemesterNumber)}
+                            className="w-full text-xs font-bold px-2 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-purple-500"
+                          >
+                            {([1, 2, 3, 4, 5, 6, 7, 8] as SemesterNumber[]).map((s) => (
+                              <option key={s} value={s} className="bg-slate-900 text-white">
+                                Sem {s}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
+                            Section
+                          </label>
+                          <select
+                            value={section}
+                            onChange={(e) => setSection(e.target.value as Section)}
+                            className="w-full text-xs font-bold px-2 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-purple-500"
+                          >
+                            <option value="A1" className="bg-slate-900 text-white">Sec A1</option>
+                            <option value="A2" className="bg-slate-900 text-white">Sec A2</option>
+                            <option value="B" className="bg-slate-900 text-white">Sec B</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
+                            Roll No (1..N)
+                          </label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={250}
+                            required
+                            value={rollNumber}
+                            onChange={(e) => setRollNumber(e.target.value === '' ? '' : Number(e.target.value))}
+                            className={`w-full text-xs font-bold px-2.5 py-2.5 rounded-xl bg-slate-950/80 border focus:outline-none transition ${
+                              duplicateStudent
+                                ? 'border-rose-500 text-rose-300 focus:ring-2 focus:ring-rose-500/20'
+                                : 'border-slate-700 text-white focus:border-purple-500'
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Real-time Inline Duplicate Roll Number Notification */}
+                      {duplicateStudent ? (
+                        <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2.5 animate-in fade-in">
+                          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold">Roll #{rollNumber} is already taken in this class!</p>
+                            <p className="text-[11px] text-rose-300/80 mt-0.5 leading-snug">
+                              Already registered to student <strong>{duplicateStudent.name}</strong> in Semester {semester} ({section}). Each student in this class must use a unique roll number.
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        rollNumber && Number(rollNumber) > 0 && (
+                          <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-semibold px-1">
+                            <Check className="w-3.5 h-3.5" />
+                            Roll #{rollNumber} is available in Semester {semester} (Section {section})
+                          </div>
+                        )
+                      )}
+
+                      {/* Password & Confirm Password with Visibility Toggle */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
+                            Password
+                          </label>
+                          <div className="relative">
+                            <input
+                              type={showRegPassword ? 'text' : 'password'}
+                              required
+                              placeholder="Min 6 chars"
+                              value={regPassword}
+                              onChange={(e) => setRegPassword(e.target.value)}
+                              className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowRegPassword(!showRegPassword)}
+                              className="absolute right-3 top-2.5 text-slate-400 hover:text-white transition"
+                              tabIndex={-1}
+                            >
+                              {showRegPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1 uppercase tracking-wider">
+                            Confirm Password
+                          </label>
+                          <input
+                            type={showRegPassword ? 'text' : 'password'}
+                            required
+                            placeholder="Repeat password"
+                            value={regConfirmPassword}
+                            onChange={(e) => setRegConfirmPassword(e.target.value)}
+                            className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Submit Registration Button */}
+                      <button
+                        type="submit"
+                        disabled={!!duplicateStudent}
+                        className={`w-full py-3.5 mt-2 rounded-xl text-white font-extrabold text-xs shadow-lg transition flex items-center justify-center gap-2 ${
+                          duplicateStudent
+                            ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-purple-600 via-purple-700 to-indigo-700 hover:from-purple-500 hover:to-indigo-600 shadow-purple-950/50 hover:scale-[1.01]'
+                        }`}
+                      >
+                        {duplicateStudent ? (
+                          `Roll #${rollNumber} is already registered`
+                        ) : (
+                          <>
+                            Create Student Account
+                            <ArrowRight className="w-4 h-4" />
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Footer Note */}
+          <div className="mt-6 text-center text-xs text-slate-500">
+            <p>
+              Govt. Graduate College Pasrur • Department of Computer Science
+              <br />
+              <span className="text-[11px] text-slate-600">
+                Official LMS Platform for BSCS Coursework & Submissions
+              </span>
+            </p>
+          </div>
+        </div>
+
+        {/* Bottom Status / Security indicator */}
+        <div className="w-full flex items-center justify-between text-[11px] text-slate-500 pt-6">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            System Online & Connected
+          </span>
+          <span>SSL 256-Bit Encrypted</span>
+        </div>
+      </div>
     </div>
   );
 };
