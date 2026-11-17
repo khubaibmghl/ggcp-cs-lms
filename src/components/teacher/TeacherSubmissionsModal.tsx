@@ -19,6 +19,8 @@ import {
   FileCode,
   Flame,
   Activity,
+  ExternalLink,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface TeacherSubmissionsModalProps {
@@ -364,9 +366,74 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                   Submitted Code / Solution:
                 </label>
                 <pre className="p-4 bg-slate-900 text-emerald-400 font-mono text-xs rounded-2xl overflow-x-auto max-h-60 border border-slate-800">
-                  {selectedSubmission.textSubmission || '(No direct text/code submitted; check attachments)'}
+                  {selectedSubmission.textSubmission || '(No direct text/code submitted; check attachments below)'}
                 </pre>
               </div>
+
+              {/* Student Attached Files & Handwritten Images (Cloudinary 25 GB / Local) */}
+              {selectedSubmission.files && selectedSubmission.files.length > 0 && (
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Attached Files & Handwritten Pages ({selectedSubmission.files.length}):
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {selectedSubmission.files.map((file, idx) => {
+                      const fileSrc = file.url || file.dataUrl;
+                      const isImage = file.type?.startsWith('image/');
+                      return (
+                        <div
+                          key={idx}
+                          className="p-3 bg-white border border-slate-200 rounded-2xl flex flex-col gap-2 shadow-2xs"
+                        >
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-semibold text-slate-800 truncate max-w-[180px]">
+                              {file.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {file.size >= 1024 * 1024
+                                ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
+                                : `${Math.round(file.size / 1024)} KB`}
+                            </span>
+                          </div>
+
+                          {/* Image preview */}
+                          {isImage && fileSrc && (
+                            <a
+                              href={fileSrc}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="relative block rounded-xl overflow-hidden border border-slate-100 bg-slate-50 group aspect-video hover:opacity-95 transition"
+                            >
+                              <img
+                                src={fileSrc}
+                                alt={file.name}
+                                className="w-full h-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-xs font-bold transition">
+                                <ExternalLink className="w-4 h-4 mr-1" />
+                                Click to view full-res in new tab
+                              </div>
+                            </a>
+                          )}
+
+                          {fileSrc && (
+                            <a
+                              href={fileSrc}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              download={file.name}
+                              className="text-center text-[11px] font-bold text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 py-1.5 px-3 rounded-xl transition flex items-center justify-center gap-1"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              Open / Download Full Solution
+                            </a>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
               {/* Grading Input Controls */}
               <div className="bg-purple-50 p-5 rounded-2xl border border-purple-100 space-y-4">

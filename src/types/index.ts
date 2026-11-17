@@ -109,6 +109,7 @@ export interface UploadedFile {
   size: number;
   type: string;
   dataUrl?: string;
+  url?: string;
   extractedText?: string;
 }
 

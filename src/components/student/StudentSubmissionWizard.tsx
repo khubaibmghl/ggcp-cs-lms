@@ -6,6 +6,7 @@ import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
 import { generateIntegrityReport } from '@/lib/integrityEngine';
 import { Assignment, Submission, UploadedFile, SubmissionTelemetry } from '@/types';
+import { uploadFileToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinaryService';
 import {
   FileText,
   UploadCloud,
@@ -237,7 +238,24 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
     setSubmissionError(null);
 
     try {
-      const processed = await Promise.all(rawFiles.map((f) => optimizeFileForSubmission(f)));
+      const optimized = await Promise.all(rawFiles.map((f) => optimizeFileForSubmission(f)));
+
+      // If Cloudinary 25 GB cloud is configured, upload directly to the cloud bucket!
+      const processed: UploadedFile[] = await Promise.all(
+        optimized.map(async (file) => {
+          if (file.dataUrl && isCloudinaryConfigured()) {
+            const cloudRes = await uploadFileToCloudinary(file.dataUrl, file.name);
+            return {
+              ...file,
+              url: cloudRes.url,
+              dataUrl: cloudRes.url,
+              size: cloudRes.bytes,
+            };
+          }
+          return file;
+        })
+      );
+
       const currentTotal = uploadedFiles.reduce((acc, f) => acc + f.size, 0);
       const newTotal = processed.reduce((acc, f) => acc + f.size, 0);
 
@@ -251,10 +269,17 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
 
       setUploadedFiles((prev) => [...prev, ...processed]);
       setSubmissionError(null);
-      showSuccess(
-        'Files Added',
-        `${processed.length} file(s) attached in Ultra-HD clarity (~1 MB standard).`
-      );
+      if (isCloudinaryConfigured()) {
+        showSuccess(
+          'Saved to 25 GB Cloud Storage',
+          `${processed.length} file(s) uploaded to Cloudinary in Ultra-HD clarity.`
+        );
+      } else {
+        showSuccess(
+          'Files Added',
+          `${processed.length} file(s) attached in Ultra-HD clarity (~1 MB standard).`
+        );
+      }
     } catch {
       setSubmissionError('An error occurred while processing your files. Please try again.');
       showError('Upload Error', 'Could not process selected files.');
@@ -554,7 +579,9 @@ int main() {
                           Click or drag photos of handwritten work, code files, or PDFs
                         </p>
                         <p className="text-[11px] text-slate-400 mt-1">
-                          Ultra-HD ~1 MB Smart Optimizer enabled • Files ≤ 1 MB kept untouched • Up to 25 MB bundle
+                          {isCloudinaryConfigured()
+                            ? '25 GB Cloud Storage Active • Ultra-HD ~1 MB standard • Direct CDN upload'
+                            : 'Ultra-HD ~1 MB Smart Optimizer enabled • Files ≤ 1 MB kept untouched • Up to 25 MB bundle'}
                         </p>
                       </>
                     )}

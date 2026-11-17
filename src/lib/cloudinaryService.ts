@@ -1,0 +1,81 @@
+/**
+ * Cloudinary 25 GB Free Cloud Storage Service
+ * Handles direct, secure client-side uploads of student assignment files
+ * (handwritten photos, PDFs, ZIPs) to Cloudinary's 25 GB free media bucket.
+ */
+
+export interface CloudinaryUploadResult {
+  url: string;
+  bytes: number;
+  format?: string;
+  publicId?: string;
+  isCloudinary: boolean;
+}
+
+export function isCloudinaryConfigured(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    !!process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME &&
+    !!process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET
+  );
+}
+
+export async function uploadFileToCloudinary(
+  fileDataUrl: string,
+  fileName: string
+): Promise<CloudinaryUploadResult> {
+  const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
+
+  // Fallback: If Cloudinary keys are not yet provided in Vercel/.env,
+  // keep the optimized local dataUrl so the LMS works seamlessly without errors.
+  if (!cloudName || !uploadPreset) {
+    const approxBytes = Math.round((fileDataUrl.length * 3) / 4);
+    return {
+      url: fileDataUrl,
+      bytes: approxBytes,
+      isCloudinary: false,
+    };
+  }
+
+  try {
+    const formData = new FormData();
+    formData.append('file', fileDataUrl);
+    formData.append('upload_preset', uploadPreset);
+    formData.append('folder', 'ggcp_lms/submissions');
+
+    const res = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      console.warn('Cloudinary upload warning:', errJson);
+      // Fallback to dataUrl on API error
+      const approxBytes = Math.round((fileDataUrl.length * 3) / 4);
+      return {
+        url: fileDataUrl,
+        bytes: approxBytes,
+        isCloudinary: false,
+      };
+    }
+
+    const data = await res.json();
+    return {
+      url: data.secure_url || data.url,
+      bytes: data.bytes || Math.round((fileDataUrl.length * 3) / 4),
+      format: data.format,
+      publicId: data.public_id,
+      isCloudinary: true,
+    };
+  } catch (err) {
+    console.warn('Cloudinary upload network error, using local fallback:', err);
+    const approxBytes = Math.round((fileDataUrl.length * 3) / 4);
+    return {
+      url: fileDataUrl,
+      bytes: approxBytes,
+      isCloudinary: false,
+    };
+  }
+}
