@@ -212,6 +212,8 @@ class LocalDataStore {
   deleteAssignment(id: string): void {
     const assignments = this.getAssignments().filter((a) => a.id !== id);
     this.saveAssignments(assignments);
+    const submissions = this.getSubmissions().filter((s) => s.assignmentId !== id);
+    this.saveSubmissions(submissions);
   }
 
   // --- Submissions ---

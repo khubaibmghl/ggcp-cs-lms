@@ -376,6 +376,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                     Review Submissions ({asgSubmissions.length})
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to permanently delete "${asg.title}" and all its student submissions?`)) {
+                        dataStore.deleteAssignment(asg.id);
+                        setAssignments(dataStore.getAssignments());
+                        setSubmissions(dataStore.getSubmissions());
+                      }
+                    }}
+                    className="p-2 rounded-xl bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-300 transition"
+                    title="Delete Assignment"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+
                   {highPlagiarismCount > 0 && (
                     <span className="px-2.5 py-1 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1">
                       <ShieldAlert className="w-3.5 h-3.5" />
