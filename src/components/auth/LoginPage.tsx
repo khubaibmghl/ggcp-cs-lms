@@ -16,8 +16,6 @@ import {
   ShieldCheck,
   Sparkles,
   BookOpen,
-  FileCheck2,
-  Users2,
   Check,
   Building2,
   HelpCircle,
@@ -66,13 +64,6 @@ export const LoginPage: React.FC = () => {
   // Registration Success State
   const [issuedStudentId, setIssuedStudentId] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
-
-  // Quick Demo Autofill Helper
-  const handleQuickFill = (id: string, pass: string) => {
-    setIdentifier(id);
-    setPassword(pass);
-    setLoginError(null);
-  };
 
   // Handle Login Submit
   const handleLoginSubmit = (e: React.FormEvent) => {
@@ -214,45 +205,6 @@ export const LoginPage: React.FC = () => {
           <p className="text-sm xl:text-base text-slate-300 leading-relaxed">
             Welcome to the centralized student assignment submission, document evaluation, and academic integrity management portal for Govt. Graduate College Pasrur.
           </p>
-
-          {/* 3 Value Proposition Features */}
-          <div className="grid grid-cols-1 gap-3.5 pt-4">
-            <div className="p-4 rounded-2xl bg-slate-900/70 backdrop-blur-md border border-white/10 flex items-start gap-3.5 shadow-lg">
-              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <FileCheck2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-xs font-bold text-white uppercase tracking-wide">Document-Based Submissions</h2>
-                <p className="text-xs text-slate-400 mt-0.5 leading-snug">
-                  Official PDF & Word question paper distribution with strict 11:59 PM deadline lockouts and instant instructor grading.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-900/70 backdrop-blur-md border border-white/10 flex items-start gap-3.5 shadow-lg">
-              <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-xs font-bold text-white uppercase tracking-wide">Integrity & Telemetry Auditing</h2>
-                <p className="text-xs text-slate-400 mt-0.5 leading-snug">
-                  3-layer peer plagiarism analysis, suspicious burst detection, and comprehensive telemetry for authentic student assessment.
-                </p>
-              </div>
-            </div>
-
-            <div className="p-4 rounded-2xl bg-slate-900/70 backdrop-blur-md border border-white/10 flex items-start gap-3.5 shadow-lg">
-              <div className="w-9 h-9 rounded-xl bg-pink-500/20 text-pink-400 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <Users2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-xs font-bold text-white uppercase tracking-wide">Multi-Section Roster Management</h2>
-                <p className="text-xs text-slate-400 mt-0.5 leading-snug">
-                  Per-section tracking for Sections A1, A2, and B across all 8 semesters with strict duplicate roll number safeguards.
-                </p>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Bottom Collegiate Accreditation Badge */}
@@ -425,36 +377,6 @@ export const LoginPage: React.FC = () => {
                     )}
                   </button>
                 </form>
-
-                {/* Quick Credentials Drawer for Faculty / Demo Testing */}
-                <div className="pt-4 border-t border-slate-800">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-2 text-center">
-                    Quick Demo Credentials (Click to Autofill)
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleQuickFill('faculty', 'faculty123')}
-                      className="py-1.5 px-2 bg-slate-950/60 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-700/60 rounded-xl text-[11px] font-semibold text-slate-300 hover:text-purple-300 transition text-center truncate"
-                    >
-                      👨‍🏫 Faculty
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleQuickFill('BCS1-A1-001', 'student123')}
-                      className="py-1.5 px-2 bg-slate-950/60 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-700/60 rounded-xl text-[11px] font-semibold text-slate-300 hover:text-purple-300 transition text-center truncate"
-                    >
-                      👨‍🎓 Student
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleQuickFill('admin', 'admin123')}
-                      className="py-1.5 px-2 bg-slate-950/60 hover:bg-purple-950/40 border border-slate-800 hover:border-purple-700/60 rounded-xl text-[11px] font-semibold text-slate-300 hover:text-purple-300 transition text-center truncate"
-                    >
-                      👑 Admin
-                    </button>
-                  </div>
-                </div>
               </div>
             )}
 
