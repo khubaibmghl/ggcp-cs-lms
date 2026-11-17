@@ -1,9 +1,10 @@
-import { PDFParse } from 'pdf-parse';
+import { extractText } from 'unpdf';
 import mammoth from 'mammoth';
 
 /**
  * Extracts raw plain text from a document payload (base64 dataUrl or remote URL)
  * Supports PDF (.pdf), Microsoft Word (.docx), and plain text/code files.
+ * Zero native binary dependencies, runs 100% reliably on Vercel Serverless.
  */
 export async function extractDocumentText(file: {
   name: string;
@@ -14,6 +15,7 @@ export async function extractDocumentText(file: {
   const fileName = (file.name || '').toLowerCase();
 
   try {
+    let uint8Data: Uint8Array | null = null;
     let buffer: Buffer | null = null;
 
     // 1. If base64 dataUrl is provided
@@ -21,11 +23,12 @@ export async function extractDocumentText(file: {
       const base64Part = file.dataUrl.split('base64,')[1];
       if (base64Part) {
         buffer = Buffer.from(base64Part, 'base64');
+        uint8Data = new Uint8Array(buffer);
       }
     }
 
     // 2. If remote URL is provided and no local buffer
-    if (!buffer && file.url) {
+    if (!uint8Data && file.url) {
       let fetchUrl = file.url;
       let response = await fetch(fetchUrl);
 
@@ -42,27 +45,30 @@ export async function extractDocumentText(file: {
 
       if (response.ok) {
         const arrayBuf = await response.arrayBuffer();
+        uint8Data = new Uint8Array(arrayBuf);
         buffer = Buffer.from(arrayBuf);
       }
     }
 
-    if (!buffer) {
+    if (!uint8Data || !buffer) {
       return '';
     }
 
-    // --- PARSE PDF ---
+    // --- PARSE PDF VIA UNPDF (Pure JS, zero native binaries, zero canvas) ---
     if (fileName.endsWith('.pdf') || file.type === 'application/pdf') {
       try {
-        const parser = new PDFParse({ data: buffer });
-        const res = await parser.getText();
-        return (res?.text || '').trim();
+        const { text } = await extractText(uint8Data);
+        if (Array.isArray(text)) {
+          return text.join('\n\n').trim();
+        }
+        return String(text || '').trim();
       } catch (err) {
-        console.error('Error parsing PDF with PDFParse:', err);
+        console.error('Error parsing PDF with unpdf:', err);
         return '';
       }
     }
 
-    // --- PARSE WORD DOCX ---
+    // --- PARSE WORD DOCX VIA MAMMOTH ---
     if (
       fileName.endsWith('.docx') ||
       fileName.endsWith('.doc') ||

@@ -131,13 +131,19 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       // 1. Extract text from target student's submission
       let targetText = targetSub.textSubmission || '';
       if (!targetText && targetSub.files?.[0]) {
-        const res = await fetch('/api/extract-text', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file: targetSub.files[0] }),
-        });
-        const d = await res.json();
-        if (d.success) targetText = d.text;
+        try {
+          const res = await fetch('/api/extract-text', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file: targetSub.files[0] }),
+          });
+          if (res.ok) {
+            const d = await res.json();
+            if (d.success) targetText = d.text;
+          }
+        } catch (err) {
+          console.warn('Target text extraction error:', err);
+        }
       }
 
       // 2. Extract text from peer submissions in this assignment
@@ -146,13 +152,19 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
         if (peer.id === targetSub.id) continue;
         let peerText = peer.textSubmission || '';
         if (!peerText && peer.files?.[0]) {
-          const res = await fetch('/api/extract-text', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ file: peer.files[0] }),
-          });
-          const d = await res.json();
-          if (d.success) peerText = d.text;
+          try {
+            const res = await fetch('/api/extract-text', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ file: peer.files[0] }),
+            });
+            if (res.ok) {
+              const d = await res.json();
+              if (d.success) peerText = d.text;
+            }
+          } catch (err) {
+            console.warn('Peer text extraction error:', err);
+          }
         }
         if (peerText) {
           peers.push({
@@ -185,6 +197,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       setPlagiarismReport(scanResult);
     } catch (err) {
       console.error('Error scanning peer plagiarism:', err);
+      alert('Plagiarism scan encountered an error. Please try again.');
     } finally {
       setScanningSubId(null);
     }
@@ -232,14 +245,19 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(`Evaluation service returned HTTP ${res.status}`);
+      }
+
       const data = await res.json();
       if (data.success && data.evaluation) {
         setEvaluationReport(data.evaluation);
       } else {
         alert(data.error || 'Evaluation could not be performed on this document.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error in automated evaluation:', err);
+      alert(err.message || 'Evaluation encountered an error. Please check server logs.');
     } finally {
       setEvaluatingSubId(null);
     }
