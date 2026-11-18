@@ -38,9 +38,9 @@ export const LoginPage: React.FC = () => {
   // Register State
   const [name, setName] = useState('');
   const [fatherName, setFatherName] = useState('');
-  const [semester, setSemester] = useState<SemesterNumber>(1);
-  const [section, setSection] = useState<Section>('A1');
-  const [rollNumber, setRollNumber] = useState<number | string>(1);
+  const [semester, setSemester] = useState<SemesterNumber | ''>('');
+  const [section, setSection] = useState<Section | ''>('');
+  const [rollNumber, setRollNumber] = useState<number | string>('');
   const [regPassword, setRegPassword] = useState('');
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
@@ -48,6 +48,7 @@ export const LoginPage: React.FC = () => {
 
   // Real-time check for duplicate student in the SAME class (Semester + Section)
   const duplicateStudent = useMemo(() => {
+    if (!semester || !section) return null;
     const num = Number(rollNumber);
     if (!num || isNaN(num) || num < 1) return null;
     return (
@@ -95,6 +96,16 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
+    if (!semester) {
+      setRegError('Please select your official semester.');
+      return;
+    }
+
+    if (!section) {
+      setRegError('Please select your official section.');
+      return;
+    }
+
     const rollNum = Number(rollNumber);
     if (!rollNum || isNaN(rollNum) || rollNum < 1 || !Number.isInteger(rollNum)) {
       setRegError('Please enter a valid positive roll number (e.g., 1, 2, 3...).');
@@ -126,8 +137,8 @@ export const LoginPage: React.FC = () => {
     const result = registerStudent({
       name: name.trim(),
       fatherName: fatherName.trim(),
-      semester,
-      section,
+      semester: semester as SemesterNumber,
+      section: section as Section,
       rollNumber: rollNum,
       password: regPassword,
     });
@@ -495,10 +506,14 @@ export const LoginPage: React.FC = () => {
                             Semester
                           </label>
                           <select
+                            required
                             value={semester}
-                            onChange={(e) => setSemester(Number(e.target.value) as SemesterNumber)}
+                            onChange={(e) => setSemester(e.target.value === '' ? '' : (Number(e.target.value) as SemesterNumber))}
                             className="w-full text-xs font-bold px-2 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-purple-500"
                           >
+                            <option value="" disabled className="bg-slate-900 text-slate-400">
+                              Select Semester
+                            </option>
                             {([1, 2, 3, 4, 5, 6, 7, 8] as SemesterNumber[]).map((s) => (
                               <option key={s} value={s} className="bg-slate-900 text-white">
                                 Sem {s}
@@ -512,10 +527,14 @@ export const LoginPage: React.FC = () => {
                             Section
                           </label>
                           <select
+                            required
                             value={section}
                             onChange={(e) => setSection(e.target.value as Section)}
                             className="w-full text-xs font-bold px-2 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white focus:outline-none focus:border-purple-500"
                           >
+                            <option value="" disabled className="bg-slate-900 text-slate-400">
+                              Select Section
+                            </option>
                             <option value="A1" className="bg-slate-900 text-white">Sec A1</option>
                             <option value="A2" className="bg-slate-900 text-white">Sec A2</option>
                             <option value="B" className="bg-slate-900 text-white">Sec B</option>
@@ -531,6 +550,7 @@ export const LoginPage: React.FC = () => {
                             min={1}
                             max={250}
                             required
+                            placeholder="e.g. 1"
                             value={rollNumber}
                             onChange={(e) => setRollNumber(e.target.value === '' ? '' : Number(e.target.value))}
                             className={`w-full text-xs font-bold px-2.5 py-2.5 rounded-xl bg-slate-950/80 border focus:outline-none transition ${duplicateStudent
