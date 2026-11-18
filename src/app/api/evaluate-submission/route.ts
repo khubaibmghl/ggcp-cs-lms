@@ -29,6 +29,18 @@ export interface EvaluationResult {
   aiEngineUsed: string;
 }
 
+export async function GET() {
+  const hasKey = Boolean(
+    process.env.GEMINI_API_KEY ||
+    process.env.NEXT_PUBLIC_GEMINI_API_KEY ||
+    (process.env as any).GENINI_API_KEY
+  );
+  return NextResponse.json({
+    configured: hasKey,
+    engine: hasKey ? 'Google Gemini AI (Server Active)' : 'Academic Strict Rule Evaluator',
+  });
+}
+
 // Administrative and institutional noise words that must NEVER contribute to student marks
 const ADMINISTRATIVE_NOISE = new Set([
   'department', 'faculty', 'official', 'course', 'workload', 'allocation',

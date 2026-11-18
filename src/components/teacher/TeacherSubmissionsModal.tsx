@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
@@ -61,12 +61,26 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [evaluatingSub, setEvaluatingSub] = useState<Submission | null>(null);
   const [evalTab, setEvalTab] = useState<'scorecard' | 'modelSolution' | 'grounding'>('scorecard');
   const [showAiSettings, setShowAiSettings] = useState(false);
+  const [isServerAiConfigured, setIsServerAiConfigured] = useState(true);
   const [geminiApiKey, setGeminiApiKey] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('ggcp_gemini_api_key') || '';
     }
     return '';
   });
+
+  useEffect(() => {
+    fetch('/api/evaluate-submission')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && typeof d.configured === 'boolean') {
+          setIsServerAiConfigured(d.configured);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const isGeminiActive = isServerAiConfigured || Boolean(geminiApiKey && geminiApiKey.trim().length > 10);
 
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceStartIndex, setWorkspaceStartIndex] = useState(0);
@@ -471,11 +485,13 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition ${
                 showAiSettings
                   ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
+                  : isGeminiActive
+                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-2xs'
                   : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
               }`}
             >
-              <Sparkles className="w-3.5 h-3.5" />
-              {geminiApiKey ? 'Gemini AI Active' : 'AI Engine'}
+              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+              {isGeminiActive ? 'Gemini AI Active' : 'AI Engine'}
             </button>
 
             <button
@@ -496,17 +512,34 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
         {/* AI Engine Settings Drawer */}
         {showAiSettings && (
-          <div className="bg-purple-50/90 border-b border-purple-200 p-4 animate-in slide-in-from-top-2">
+          <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-emerald-50/50 border-b border-purple-200 p-4 animate-in slide-in-from-top-2">
             <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
               <div className="flex-1">
-                <h4 className="text-xs font-extrabold text-purple-950 flex items-center gap-1.5">
-                  <Sparkles className="w-3.5 h-3.5 text-purple-700" />
-                  Assignment Correction Engine Configuration
-                </h4>
-                <p className="text-[11px] text-purple-800/80 mt-0.5">
-                  Current Mode: <strong>{geminiApiKey ? 'Google Gemini AI Engine (Active)' : 'Academic Strict Rule Evaluator'}</strong>. Zero-tolerance scoring prevents false marks for off-topic/administrative files. To enable deep semantic grading, paste your Google Gemini API key.
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-extrabold text-purple-950 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                    Assignment Correction Engine Configuration
+                  </h4>
+                  {isGeminiActive && (
+                    <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-[10px] border border-emerald-300">
+                      Active &amp; Ready
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-purple-900/80 mt-1 leading-relaxed">
+                  {isGeminiActive ? (
+                    <>
+                      Current Mode: <strong className="text-emerald-800 font-bold">Google Gemini AI Engine (Active via Institutional Server)</strong>. Zero-tolerance scoring, canonical rubric discovery, and differential student evaluation are automatically active for all faculty. You do <strong>not</strong> need to enter an API key.
+                    </>
+                  ) : (
+                    <>
+                      Current Mode: <strong>Academic Strict Rule Evaluator</strong>. Zero-tolerance scoring prevents false marks for off-topic/administrative files.
+                    </>
+                  )}
                 </p>
               </div>
+
+              {/* Optional Key Override */}
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 <input
                   type="password"
@@ -518,8 +551,9 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                       localStorage.setItem('ggcp_gemini_api_key', v);
                     }
                   }}
-                  placeholder="Paste Gemini API Key (optional)..."
-                  className="px-3 py-1.5 text-xs rounded-xl border border-purple-300 bg-white text-slate-800 placeholder-slate-400 focus:outline-purple-600 w-full sm:w-64"
+                  placeholder="Custom Key Override (optional)..."
+                  className="px-3 py-1.5 text-xs rounded-xl border border-purple-300 bg-white text-slate-800 placeholder-slate-400 focus:outline-purple-600 w-full sm:w-56"
+                  title="Leave empty to use institutional server key"
                 />
                 {geminiApiKey && (
                   <button
@@ -532,7 +566,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                     }}
                     className="text-[11px] text-rose-600 hover:underline font-bold whitespace-nowrap"
                   >
-                    Clear
+                    Reset
                   </button>
                 )}
               </div>
