@@ -54,6 +54,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [evaluatingSubId, setEvaluatingSubId] = useState<string | null>(null);
   const [evaluationReport, setEvaluationReport] = useState<any | null>(null);
   const [evaluatingSub, setEvaluatingSub] = useState<Submission | null>(null);
+  const [evalTab, setEvalTab] = useState<'scorecard' | 'modelSolution' | 'grounding'>('scorecard');
   const [showAiSettings, setShowAiSettings] = useState(false);
   const [geminiApiKey, setGeminiApiKey] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -798,99 +799,227 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 </button>
               </div>
 
-              {/* Question-by-Question Itemized Scorecard */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                  <BookOpen className="w-4 h-4 text-emerald-600" />
-                  Question-by-Question Analysis ({evaluationReport.questionBreakdown?.length || 0} Questions Evaluated)
-                </h4>
+              {/* 3-Tab Segment Control */}
+              <div className="flex items-center space-x-1 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setEvalTab('scorecard')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    evalTab === 'scorecard'
+                      ? 'bg-white text-purple-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-purple-600" />
+                  Scorecard & Critique ({evaluationReport.questionBreakdown?.length || 0})
+                </button>
 
-                <div className="space-y-2.5">
-                  {evaluationReport.questionBreakdown?.map((q: any, i: number) => (
-                    <div
-                      key={i}
-                      className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5 hover:border-emerald-300 transition"
-                    >
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-slate-900">{q.questionNumber}: {q.prompt}</span>
-                        <span
-                          className={`font-mono font-bold px-2 py-0.5 rounded text-[11px] ${
-                            q.status === 'Full Marks'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : q.status === 'Partial'
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-rose-100 text-rose-800'
-                          }`}
+                <button
+                  type="button"
+                  onClick={() => setEvalTab('modelSolution')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    evalTab === 'modelSolution'
+                      ? 'bg-white text-purple-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                  Model Answer Key
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setEvalTab('grounding')}
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+                    evalTab === 'grounding'
+                      ? 'bg-white text-purple-900 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5 text-slate-500" />
+                  Raw Grounding Extracts
+                </button>
+              </div>
+
+              {/* TAB 1: SCORECARD & CRITIQUE */}
+              {evalTab === 'scorecard' && (
+                <div className="space-y-5 animate-in fade-in">
+                  <div className="space-y-3">
+                    <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <BookOpen className="w-4 h-4 text-emerald-600" />
+                      Question-by-Question Analysis ({evaluationReport.questionBreakdown?.length || 0} Questions Evaluated)
+                    </h4>
+
+                    <div className="space-y-3">
+                      {evaluationReport.questionBreakdown?.map((q: any, i: number) => (
+                        <div
+                          key={i}
+                          className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2.5 hover:border-purple-300 transition"
                         >
-                          {q.marksAwarded} / {q.maxMarks} Marks ({q.status})
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-600 leading-relaxed">{q.feedback}</p>
-                      {q.keyConceptsCovered?.length > 0 && (
-                        <div className="flex items-center gap-1 text-[10px] text-slate-500 pt-0.5">
-                          <span className="font-bold">Key topics covered:</span>
-                          {q.keyConceptsCovered.join(', ')}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
+                            <span className="font-extrabold text-slate-900">{q.questionNumber}: {q.prompt}</span>
+                            <span
+                              className={`font-mono font-bold px-2.5 py-0.5 rounded-md text-[11px] self-start sm:self-auto ${
+                                q.status === 'Full Marks'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : q.status === 'Partial'
+                                  ? 'bg-amber-100 text-amber-800'
+                                  : 'bg-rose-100 text-rose-800'
+                              }`}
+                            >
+                              {q.marksAwarded} / {q.maxMarks} Marks ({q.status})
+                            </span>
+                          </div>
+
+                          <p className="text-xs text-slate-700 leading-relaxed">{q.feedback}</p>
+
+                          {/* Student excerpt quotation */}
+                          {q.studentEvidenceSnippet && (
+                            <div className="p-3 bg-white rounded-xl border border-slate-200 text-xs">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                                Student Submission Excerpt Evaluated:
+                              </span>
+                              <p className="italic font-mono text-[11px] text-slate-800 bg-slate-50 p-2 rounded-lg line-clamp-3">
+                                &ldquo;{q.studentEvidenceSnippet}&rdquo;
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Rubric criteria */}
+                          {q.evaluationRubricCriteria?.length > 0 && (
+                            <div className="pt-1">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                                Rubric Criteria Applied:
+                              </span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {q.evaluationRubricCriteria.map((c: string, idx: number) => (
+                                  <span key={idx} className="text-[10px] px-2 py-0.5 rounded-md bg-purple-50 text-purple-800 border border-purple-200 font-semibold">
+                                    {c}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Strengths & Improvements */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1.5">
-                  <span className="font-bold text-emerald-900 flex items-center gap-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    Key Strengths Identified
-                  </span>
-                  <ul className="list-disc list-inside space-y-1 text-slate-700 text-[11px]">
-                    {evaluationReport.strengths?.map((s: string, idx: number) => (
-                      <li key={idx}>{s}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1.5">
-                  <span className="font-bold text-amber-900 flex items-center gap-1">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
-                    Areas for Improvement
-                  </span>
-                  <ul className="list-disc list-inside space-y-1 text-slate-700 text-[11px]">
-                    {evaluationReport.areasForImprovement?.map((a: string, idx: number) => (
-                      <li key={idx}>{a}</li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Draft Remarks Preview */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">
-                  Draft Instructor Remarks:
-                </label>
-                <div className="p-3 bg-slate-900 text-slate-200 font-mono text-xs rounded-xl border border-slate-800">
-                  {evaluationReport.instructorFeedbackDraft}
-                </div>
-              </div>
-
-              {/* Evidence Samples Box (Shows proof that question paper & solution were read!) */}
-              <div className="p-3.5 bg-purple-50/60 rounded-xl border border-purple-200 text-xs space-y-2">
-                <span className="font-bold text-purple-900 flex items-center gap-1 text-[11px]">
-                  <HelpCircle className="w-3.5 h-3.5 text-purple-600" />
-                  Grounding Evidence Verification:
-                </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px] text-slate-600">
-                  <div className="p-2 bg-white rounded-lg border border-purple-100">
-                    <strong className="text-slate-800 block mb-0.5">Question Paper Extracted:</strong>
-                    <span className="italic line-clamp-3">&ldquo;{evaluationReport.questionPaperSample}&rdquo;</span>
                   </div>
-                  <div className="p-2 bg-white rounded-lg border border-purple-100">
-                    <strong className="text-slate-800 block mb-0.5">Student Solution Extracted:</strong>
-                    <span className="italic line-clamp-3">&ldquo;{evaluationReport.solutionSample}&rdquo;</span>
+
+                  {/* Strengths & Improvements */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 space-y-1.5">
+                      <span className="font-bold text-emerald-900 flex items-center gap-1">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                        Key Strengths Identified
+                      </span>
+                      <ul className="list-disc list-inside space-y-1 text-slate-700 text-[11px]">
+                        {evaluationReport.strengths?.map((s: string, idx: number) => (
+                          <li key={idx}>{s}</li>
+                        ))}
+                      </ul>
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-amber-50/70 border border-amber-200 space-y-1.5">
+                      <span className="font-bold text-amber-900 flex items-center gap-1">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                        Areas for Improvement
+                      </span>
+                      <ul className="list-disc list-inside space-y-1 text-slate-700 text-[11px]">
+                        {evaluationReport.areasForImprovement?.map((a: string, idx: number) => (
+                          <li key={idx}>{a}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+
+                  {/* Draft Remarks Preview */}
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Draft Instructor Remarks:
+                    </label>
+                    <div className="p-3 bg-slate-900 text-slate-200 font-mono text-xs rounded-xl border border-slate-800 leading-relaxed">
+                      {evaluationReport.instructorFeedbackDraft}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* TAB 2: MODEL ANSWER KEY (CANONICAL SOLUTIONS) */}
+              {evalTab === 'modelSolution' && (
+                <div className="space-y-4 animate-in fade-in">
+                  <div className="p-4 bg-purple-50 border border-purple-200 rounded-2xl text-xs space-y-1">
+                    <div className="flex items-center gap-2 text-purple-950 font-bold">
+                      <Sparkles className="w-4 h-4 text-purple-700" />
+                      <h4>Canonical Solution Discovery & Benchmark Answer Key</h4>
+                    </div>
+                    <p className="text-[11px] text-purple-800 leading-relaxed">
+                      {evaluationReport.canonicalAnswerKeySummary || 'Canonical solution benchmarks and point rubrics discovered for this assignment.'}
+                    </p>
+                  </div>
+
+                  <div className="space-y-4">
+                    {evaluationReport.questionBreakdown?.map((q: any, idx: number) => (
+                      <div key={idx} className="p-5 bg-slate-900 text-white rounded-2xl border border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                          <span className="text-xs font-extrabold text-purple-300">
+                            {q.questionNumber}: {q.prompt}
+                          </span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-purple-500/20 text-purple-200 border border-purple-400/30">
+                            Weight: {q.maxMarks} Marks
+                          </span>
+                        </div>
+
+                        <div className="space-y-1">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                            Canonical Reference Solution:
+                          </span>
+                          <pre className="p-3.5 bg-slate-950 text-emerald-300 font-mono text-xs rounded-xl overflow-x-auto border border-slate-800 leading-relaxed">
+                            {q.modelSolutionSnippet || '// Canonical reference implementation'}
+                          </pre>
+                        </div>
+
+                        {q.evaluationRubricCriteria?.length > 0 && (
+                          <div className="space-y-1 pt-1">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Marking Scheme & Rubric Weights:
+                            </span>
+                            <ul className="list-disc list-inside text-[11px] text-slate-300 space-y-0.5">
+                              {q.evaluationRubricCriteria.map((c: string, rIdx: number) => (
+                                <li key={rIdx}>{c}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: RAW GROUNDING EXTRACTS */}
+              {evalTab === 'grounding' && (
+                <div className="space-y-3 animate-in fade-in">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                      <strong className="text-slate-900 font-extrabold block text-xs border-b border-slate-200 pb-1">
+                        Question Paper Full Extracted Text:
+                      </strong>
+                      <div className="max-h-60 overflow-y-auto text-[11px] text-slate-700 font-mono whitespace-pre-wrap leading-relaxed bg-white p-3 rounded-xl border border-slate-200">
+                        {evaluationReport.questionPaperSample}
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                      <strong className="text-slate-900 font-extrabold block text-xs border-b border-slate-200 pb-1">
+                        Student Submission Full Extracted Text:
+                      </strong>
+                      <div className="max-h-60 overflow-y-auto text-[11px] text-slate-700 font-mono whitespace-pre-wrap leading-relaxed bg-white p-3 rounded-xl border border-slate-200">
+                        {evaluationReport.solutionSample}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Bottom Buttons */}
               <div className="flex items-center justify-between pt-2 border-t border-slate-100">

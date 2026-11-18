@@ -40,6 +40,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   const [showWizard, setShowWizard] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [activeAssignmentForReview, setActiveAssignmentForReview] = useState<Assignment | null>(null);
+  const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
 
   // --- Wizard Form State (4 Steps) ---
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
@@ -378,13 +379,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
                   <button
                     type="button"
-                    onClick={() => {
-                      if (window.confirm(`Are you sure you want to permanently delete "${asg.title}" and all its student submissions?`)) {
-                        dataStore.deleteAssignment(asg.id);
-                        setAssignments(dataStore.getAssignments());
-                        setSubmissions(dataStore.getSubmissions());
-                      }
-                    }}
+                    onClick={() => setAssignmentToDelete(asg)}
                     className="p-2 rounded-xl bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-300 transition"
                     title="Delete Assignment"
                   >
@@ -779,6 +774,52 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
             loadData();
           }}
         />
+      )}
+
+      {/* --- PROFESSIONAL DELETE CONFIRMATION DIALOG --- */}
+      {assignmentToDelete && (
+        <div className="fixed inset-0 z-70 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
+            <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+              <Trash2 className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-2">
+              <h3 className="text-lg font-black text-slate-900">
+                Delete Assignment Permanently?
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                You are about to delete <strong className="text-slate-800">&ldquo;{assignmentToDelete.title}&rdquo;</strong>.
+                This will permanently delete the assignment, all student submissions, and recorded grades. This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAssignmentToDelete(null)}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  dataStore.deleteAssignment(assignmentToDelete.id);
+                  setAssignments(dataStore.getAssignments());
+                  setSubmissions(dataStore.getSubmissions());
+                  setAssignmentToDelete(null);
+                  showSuccess('Assignment and student submissions deleted successfully.');
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-extrabold text-xs shadow-md shadow-rose-950/20 transition flex items-center justify-center gap-1.5"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Yes, Delete Assignment
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
