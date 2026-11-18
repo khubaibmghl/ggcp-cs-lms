@@ -1,29 +1,29 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
-import { generateIntegrityReport } from '@/lib/integrityEngine';
-import { Assignment, Submission, UploadedFile, SubmissionTelemetry } from '@/types';
+import { Assignment, Submission, UploadedFile } from '@/types';
 import { uploadFileToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinaryService';
 import {
   FileText,
   UploadCloud,
   CheckCircle2,
-  AlertTriangle,
   AlertCircle,
-  Code2,
-  Image as ImageIcon,
   Clock,
-  Sparkles,
   ChevronRight,
-  ShieldCheck,
-  Copy,
+  ChevronLeft,
   Trash2,
-  Flame,
   Loader2,
   Download,
+  Calendar,
+  Award,
+  BookOpen,
+  User,
+  ExternalLink,
+  ShieldCheck,
+  FileCheck2,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -37,300 +37,184 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
   onClose,
 }) => {
   const { currentUser } = useAuth();
-  const { showSuccess, showError, showWarning, showInfo } = useToast();
+  const { showSuccess, showError, showWarning } = useToast();
+
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
 
-  // Existing submission check (for editing/resubmitting)
+  // Check if student already submitted earlier
   const existingSub = dataStore
     .getSubmissions()
     .find((s) => s.assignmentId === assignment.id && s.studentId === currentUser?.id);
 
-  // Form states
-  const [textSolution, setTextSolution] = useState(existingSub?.textSubmission || '');
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>(existingSub?.files || []);
-  const [inputMode, setInputMode] = useState<'text' | 'files'>('text');
-  const [isOptimizing, setIsOptimizing] = useState(false);
 
-  // --- Real-Time Telemetry Tracking ---
-  const [telemetry, setTelemetry] = useState<SubmissionTelemetry>(
-    existingSub?.integrityReport?.telemetry || {
-      typedCharacterCount: 0,
-      pasteEventCount: 0,
-      totalPastedCharacters: 0,
-      typingDurationSeconds: 0,
-      estimatedWPM: 0,
-      suspiciousBurstDetected: false,
-      timelineLogs: ['Session started in LMS editor'],
-    }
-  );
-
-  const activeTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const typingStartTimeRef = useRef<number>(Date.now());
-
-  // Track active time spent typing
-  useEffect(() => {
-    activeTimerRef.current = setInterval(() => {
-      setTelemetry((prev) => {
-        const duration = Math.max(1, Math.round((Date.now() - typingStartTimeRef.current) / 1000));
-        const words = prev.typedCharacterCount / 5;
-        const wpm = Math.round((words / (duration / 60)) || 0);
-        return {
-          ...prev,
-          typingDurationSeconds: duration,
-          estimatedWPM: wpm,
-        };
-      });
-    }, 1000);
-
-    return () => {
-      if (activeTimerRef.current) clearInterval(activeTimerRef.current);
-    };
-  }, []);
-
-  // Text change handler (tracks organic typing)
-  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    const diff = val.length - textSolution.length;
-    setTextSolution(val);
-
-    if (diff > 0 && diff < 15) {
-      // Normal human keystrokes
-      setTelemetry((prev) => ({
-        ...prev,
-        typedCharacterCount: prev.typedCharacterCount + diff,
-      }));
-    }
+  // Format file size nicely
+  const formatBytes = (bytes: number): string => {
+    if (!bytes || bytes === 0) return '0 KB';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  // Intercept paste events
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const pastedText = e.clipboardData.getData('text');
-    const pastedLength = pastedText.length;
-
-    setTelemetry((prev) => {
-      const isBurst = pastedLength > 150;
-      const newLogs = [...prev.timelineLogs];
-
-      if (isBurst) {
-        newLogs.push(
-          `SUSPICIOUS: ${pastedLength} characters pasted in bulk from clipboard at ${new Date().toLocaleTimeString()}`
-        );
-      } else {
-        newLogs.push(`Pasted ${pastedLength} characters at ${new Date().toLocaleTimeString()}`);
-      }
-
-      return {
-        ...prev,
-        pasteEventCount: prev.pasteEventCount + 1,
-        totalPastedCharacters: prev.totalPastedCharacters + pastedLength,
-        suspiciousBurstDetected: prev.suspiciousBurstDetected || isBurst,
-        timelineLogs: newLogs,
-      };
-    });
+  // Check deadline expiration
+  const isDeadlinePassed = (): boolean => {
+    if (!assignment.deadlineDate) return false;
+    const [year, month, day] = assignment.deadlineDate.split('-').map(Number);
+    const deadline = new Date(year, month - 1, day, 23, 59, 59, 999);
+    return Date.now() > deadline.getTime();
   };
 
-  // Smart Ultra-HD Optimizer for Student Submissions
-  // - Images under 1 MB are kept 100% untouched with zero quality loss.
-  // - Large camera photos (5-15 MB) are scaled to 2K Ultra-HD (max 2048px) at ~88% quality,
-  //   producing ~800 KB - 1.1 MB files with crystal-clear handwriting readability.
-  // - Non-image files (PDFs, ZIPs, code) are kept as original.
-  const optimizeFileForSubmission = async (file: File): Promise<UploadedFile> => {
-    // Non-images or images already <= 1 MB (1024 * 1024 bytes) remain 100% original
-    if (!file.type.startsWith('image/') || file.size <= 1024 * 1024) {
-      return new Promise((resolve) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          resolve({
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            dataUrl: typeof reader.result === 'string' ? reader.result : undefined,
-          });
-        };
-        reader.onerror = () => {
-          resolve({ name: file.name, size: file.size, type: file.type });
-        };
-        reader.readAsDataURL(file);
-      });
+  // Pre-flight check and process document files
+  const processDocumentFiles = async (filesList: File[]) => {
+    if (filesList.length === 0) return;
+
+    const file = filesList[0]; // strictly 1 solution document per assignment
+    const fileNameLower = file.name.toLowerCase();
+    const isDoc =
+      fileNameLower.endsWith('.pdf') ||
+      fileNameLower.endsWith('.docx') ||
+      fileNameLower.endsWith('.doc');
+
+    if (!isDoc) {
+      setSubmissionError('Invalid format. Only PDF (.pdf) and Microsoft Word (.docx, .doc) files are accepted.');
+      showError('Invalid Format', 'Please upload a PDF (.pdf) or Word (.docx) document.');
+      return;
     }
 
-    // Heavy camera photos: gentle Ultra-HD 2K optimization
-    return new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const rawDataUrl = typeof reader.result === 'string' ? reader.result : '';
-        if (!rawDataUrl) {
-          resolve({ name: file.name, size: file.size, type: file.type });
-          return;
-        }
-
-        const img = new Image();
-        img.onload = () => {
-          try {
-            const maxDim = 2048;
-            let { width, height } = img;
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
-              } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
-              }
-            }
-
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-              resolve({ name: file.name, size: file.size, type: file.type, dataUrl: rawDataUrl });
-              return;
-            }
-
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(img, 0, 0, width, height);
-
-            // 0.88 quality JPEG produces razor-sharp handwriting text around 800 KB - 1.1 MB
-            const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
-            const approxBytes = Math.round((optimizedDataUrl.length * 3) / 4);
-
-            resolve({
-              name: file.name.replace(/\.[^/.]+$/, '') + '.jpg',
-              size: approxBytes,
-              type: 'image/jpeg',
-              dataUrl: optimizedDataUrl,
-            });
-          } catch {
-            resolve({ name: file.name, size: file.size, type: file.type, dataUrl: rawDataUrl });
-          }
-        };
-        img.onerror = () => {
-          resolve({ name: file.name, size: file.size, type: file.type, dataUrl: rawDataUrl });
-        };
-        img.src = rawDataUrl;
-      };
-      reader.onerror = () => {
-        resolve({ name: file.name, size: file.size, type: file.type });
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // Solution Document Upload Handler (PDF or Word .docx ONLY)
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const rawFiles = Array.from(files);
-
-    // Validate: Only PDF or Word documents
-    const validExts = ['.pdf', '.doc', '.docx'];
-    for (const file of rawFiles) {
-      const isDoc = validExts.some((ext) => file.name.toLowerCase().endsWith(ext));
-      if (!isDoc) {
-        setSubmissionError(`Invalid file: "${file.name}". Only PDF (.pdf) and Microsoft Word (.docx, .doc) files are allowed.`);
-        showError('Invalid Format', 'Only PDF (.pdf) or Word (.docx, .doc) files are accepted.');
-        return;
-      }
-      if (file.size > 25 * 1024 * 1024) {
-        setSubmissionError(`File "${file.name}" exceeds the 25 MB limit.`);
-        showError('File Too Large', `File "${file.name}" exceeds 25 MB.`);
-        return;
-      }
+    if (file.size > 25 * 1024 * 1024) {
+      setSubmissionError('File size exceeds the 25 MB limit. Please compress or optimize your document.');
+      showError('File Too Large', 'Maximum file size allowed is 25 MB.');
+      return;
     }
 
-    setIsOptimizing(true);
+    setIsProcessing(true);
     setSubmissionError(null);
 
     try {
-      // 1. Read files into base64 dataUrl
-      const readDocs: UploadedFile[] = await Promise.all(
-        rawFiles.map((file) => {
-          return new Promise<UploadedFile>((resolve) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              const dataUrl = typeof reader.result === 'string' ? reader.result : '';
-              resolve({
-                name: file.name,
-                size: file.size,
-                type: file.type || 'application/pdf',
-                dataUrl: dataUrl,
-              });
-            };
-            reader.onerror = () => {
-              resolve({ name: file.name, size: file.size, type: file.type });
-            };
-            reader.readAsDataURL(file);
-          });
-        })
-      );
+      // 1. Read file to Base64 DataURL
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(new Error('Failed to read file'));
+        reader.readAsDataURL(file);
+      });
 
-      // 2. Upload to Cloudinary if configured, BUT PRESERVE dataUrl (prevents 401 ACL download failures!)
-      const processed: UploadedFile[] = await Promise.all(
-        readDocs.map(async (file) => {
-          if (file.dataUrl && isCloudinaryConfigured()) {
-            const cloudRes = await uploadFileToCloudinary(file.dataUrl, file.name);
-            return {
-              ...file,
-              url: cloudRes.url,
-              dataUrl: file.dataUrl, // KEEP BASE64 DATAURL SAFE FOR 100% RELIABLE DOWNLOADS!
-              size: file.size,
-            };
+      let processedFile: UploadedFile = {
+        name: file.name,
+        size: file.size,
+        type: file.type || (fileNameLower.endsWith('.pdf') ? 'application/pdf' : 'application/msword'),
+        dataUrl,
+      };
+
+      // 2. Cloud storage sync if configured
+      if (isCloudinaryConfigured()) {
+        try {
+          const cloudRes = await uploadFileToCloudinary(dataUrl, file.name);
+          processedFile.url = cloudRes.url;
+        } catch {
+          // Continue with local dataUrl
+        }
+      }
+
+      // 3. Pre-flight text extraction check
+      try {
+        const extractRes = await fetch('/api/extract-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file: processedFile }),
+        });
+        if (extractRes.ok) {
+          const json = await extractRes.json();
+          if (json.success && json.text) {
+            processedFile.extractedText = json.text;
           }
-          return file;
-        })
-      );
+        }
+      } catch {
+        // Safe to proceed even if extraction is deferred
+      }
 
-      setUploadedFiles(processed);
+      setUploadedFiles([processedFile]);
       setSubmissionError(null);
-      showSuccess(
-        'Document Attached',
-        `"${processed[0]?.name}" attached as solution file.`
-      );
+      showSuccess('Document Attached', `"${file.name}" is attached and ready.`);
     } catch {
-      setSubmissionError('An error occurred while uploading your document. Please try again.');
-      showError('Upload Error', 'Could not process selected file.');
+      setSubmissionError('Could not process the selected file. Please verify it is a valid document.');
+      showError('Upload Error', 'Could not process the document.');
     } finally {
-      setIsOptimizing(false);
-      e.target.value = '';
+      setIsProcessing(false);
     }
   };
 
-  const removeFile = (index: number) => {
-    setUploadedFiles((prev) => prev.filter((_, i) => i !== index));
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      processDocumentFiles(Array.from(e.target.files));
+    }
+    e.target.value = '';
   };
 
-  // Submit Assignment Handler
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      processDocumentFiles(Array.from(e.dataTransfer.files));
+    }
+  };
+
+  const handleDownloadAttachedFile = (file: UploadedFile) => {
+    const downloadUri = file.dataUrl || file.url;
+    if (!downloadUri) return;
+    const link = document.createElement('a');
+    link.href = downloadUri;
+    link.download = file.name;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleDownloadQuestionPaper = () => {
+    if (!assignment.resourceFileContent) return;
+    const link = document.createElement('a');
+    link.href = assignment.resourceFileContent;
+    link.download = assignment.resourceFileName || `${assignment.subjectCode}_Assignment_Paper.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleSubmit = () => {
     if (uploadedFiles.length === 0) {
-      setSubmissionError('Please upload your completed solution document in PDF (.pdf) or Word (.docx) format.');
-      showWarning('Incomplete Submission', 'Please attach your solution document before submitting.');
+      setSubmissionError('Please attach your solution document (PDF or Word) before submitting.');
+      showWarning('File Required', 'Attach your completed assignment file.');
       return;
     }
 
     if (!currentUser) return;
 
-    const newSubmission: Submission = {
+    if (isDeadlinePassed()) {
+      setSubmissionError('The deadline for this assignment has expired.');
+      showError('Submission Closed', 'The deadline for this assignment has passed.');
+      return;
+    }
+
+    const submissionPayload: Submission = {
       id: existingSub?.id || `sub-${Date.now()}`,
       assignmentId: assignment.id,
       studentId: currentUser.id,
       studentName: currentUser.name,
       studentRollNumber: currentUser.rollNumber || 1,
-      studentSemester: currentUser.semester || 1,
+      studentSemester: currentUser.semester || assignment.semester,
       studentSection: currentUser.section || 'A1',
       textSubmission: '',
       files: uploadedFiles,
       submittedAt: new Date().toISOString(),
       status: 'submitted',
-      // No fake AI suggested score! Teacher grades manually based on the document.
       aiSuggestedScore: undefined,
       integrityReport: {
         peerPlagiarismScore: 0,
         aiLikelihoodScore: 0,
-        aiReasoning: `Document submission (${uploadedFiles[0]?.name || 'PDF/Word'}). Solution file attached for instructor manual evaluation.`,
+        aiReasoning: `Document submission: ${uploadedFiles[0]?.name}`,
         telemetry: {
           typedCharacterCount: 0,
           pasteEventCount: 0,
@@ -343,64 +227,105 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
       },
     };
 
-    dataStore.upsertSubmission(newSubmission);
+    dataStore.upsertSubmission(submissionPayload);
 
-    // Confetti celebration
     try {
       confetti({
-        particleCount: 100,
-        spread: 70,
+        particleCount: 120,
+        spread: 80,
         origin: { y: 0.6 },
       });
     } catch {
-      // fallback
+      // Ignored if confetti fails
     }
 
     showSuccess(
       'Assignment Submitted',
-      'Your work has been saved successfully! You can resubmit anytime before midnight.'
+      existingSub
+        ? 'Your updated solution document has been submitted successfully.'
+        : 'Your assignment solution has been submitted successfully.'
     );
+
     onClose();
   };
 
+  const attachedFile = uploadedFiles[0];
+  const isPdf = attachedFile?.name.toLowerCase().endsWith('.pdf');
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
-      <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95">
-        {/* Header & Stepper */}
+    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
+      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+        {/* Header */}
         <div className="p-6 bg-slate-900 text-white flex-shrink-0">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <span className="text-[10px] font-bold text-purple-300 uppercase tracking-wider">
-                Step {step} of 3 • {assignment.subjectCode}
-              </span>
-              <h2 className="text-base font-extrabold truncate max-w-xl">{assignment.title}</h2>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-full bg-purple-500/20 text-purple-300 text-[11px] font-bold border border-purple-500/30">
+                  {assignment.subjectCode}
+                </span>
+                <span className="text-xs text-slate-400 font-medium">
+                  Total: {assignment.totalMarks} Marks
+                </span>
+              </div>
+              <h2 className="text-base font-extrabold text-white mt-1.5 truncate max-w-lg">
+                {assignment.title}
+              </h2>
             </div>
+
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white font-bold"
+              className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white transition text-xs font-bold"
+              aria-label="Close dialog"
             >
               ✕
             </button>
           </div>
 
-          {/* Stepper Dots */}
+          {/* Stepper Progress Bar */}
           <div className="grid grid-cols-3 gap-2">
-            {[1, 2, 3].map((s) => (
-              <div
-                key={s}
-                className={`h-1.5 rounded-full transition-all ${
-                  s <= step ? 'bg-purple-500' : 'bg-slate-700'
-                }`}
-              />
-            ))}
+            {[
+              { num: 1, label: 'Question Paper' },
+              { num: 2, label: 'Attach Solution' },
+              { num: 3, label: 'Review & Submit' },
+            ].map((s) => {
+              const isActive = s.num === step;
+              const isDone = s.num < step;
+              return (
+                <div key={s.num} className="space-y-1.5">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-300 ${
+                      isDone
+                        ? 'bg-emerald-400'
+                        : isActive
+                        ? 'bg-purple-400'
+                        : 'bg-slate-700'
+                    }`}
+                  />
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span
+                      className={`font-semibold ${
+                        isActive
+                          ? 'text-purple-300'
+                          : isDone
+                          ? 'text-emerald-300'
+                          : 'text-slate-500'
+                      }`}
+                    >
+                      Step {s.num}: {s.label}
+                    </span>
+                    {isDone && <CheckCircle2 className="w-3 h-3 text-emerald-400" />}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Modal Scrollable Body */}
-        <div className="p-6 overflow-y-auto flex-1 space-y-4">
-          {/* Professional Inline Validation Alert Label */}
+        {/* Modal Body */}
+        <div className="p-6 overflow-y-auto flex-1 space-y-5">
+          {/* Error Banner */}
           {submissionError && (
-            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2.5 animate-in fade-in">
+            <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-3 animate-in fade-in">
               <div className="flex items-center gap-2">
                 <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
                 <span>{submissionError}</span>
@@ -408,230 +333,326 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
               <button
                 type="button"
                 onClick={() => setSubmissionError(null)}
-                className="text-rose-400 hover:text-rose-700 font-bold p-1"
-                title="Dismiss message"
+                className="text-rose-400 hover:text-rose-700 font-bold p-1 text-sm"
               >
                 ✕
               </button>
             </div>
           )}
-          {/* --- STEP 1: Assignment Brief & Starter File --- */}
+
+          {/* STEP 1: Question Paper & Instructions */}
           {step === 1 && (
             <div className="space-y-4">
-              <div className="bg-purple-50 border border-purple-200/80 rounded-2xl p-4 space-y-2">
-                <span className="text-[10px] font-bold text-purple-700 uppercase">
-                  Problem Description & Instructions
-                </span>
-                <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
-                  {assignment.description}
-                </p>
-                <div className="flex items-center gap-4 text-xs font-semibold text-purple-900 pt-2 border-t border-purple-200/60">
-                  <span>Total Marks: {assignment.totalMarks}</span>
-                  <span>Deadline: {assignment.deadlineDate} (11:59:59 PM)</span>
-                </div>
-              </div>
-
-              {/* Question Document Download Banner */}
-              {assignment.resourceFileContent && (
-                <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between gap-3">
+              {/* Official Question Paper Download Card */}
+              {assignment.resourceFileContent ? (
+                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3 truncate">
-                    <FileText className="w-8 h-8 text-purple-700 flex-shrink-0" />
+                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                      <FileText className="w-5 h-5" />
+                    </div>
                     <div className="truncate">
-                      <h4 className="text-xs font-extrabold text-slate-900 truncate">
-                        {assignment.resourceFileName || 'Assignment Question Document'}
+                      <h4 className="text-xs font-bold text-slate-900 truncate">
+                        {assignment.resourceFileName || 'Assignment_Questions.pdf'}
                       </h4>
-                      <p className="text-[11px] text-slate-500">Official Question Paper (PDF / Word .docx)</p>
+                      <p className="text-[11px] text-purple-700 font-medium">
+                        Official Question Paper provided by instructor
+                      </p>
                     </div>
                   </div>
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!assignment.resourceFileContent) return;
-                      const link = document.createElement('a');
-                      link.href = assignment.resourceFileContent;
-                      link.download = assignment.resourceFileName || 'Assignment_Questions.pdf';
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    }}
-                    className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs flex-shrink-0"
+                    onClick={handleDownloadQuestionPaper}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition flex-shrink-0"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    Download Question Paper
+                    <span>Download Paper</span>
                   </button>
+                </div>
+              ) : (
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center gap-2 text-xs text-slate-600">
+                  <BookOpen className="w-4 h-4 text-purple-600 flex-shrink-0" />
+                  <span>Refer to the description below for assignment questions and details.</span>
                 </div>
               )}
 
-              {/* Grading Criteria */}
+              {/* Instructions Box */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Assignment Instructions
+                </span>
+                <p className="text-xs text-slate-700 whitespace-pre-wrap leading-relaxed">
+                  {assignment.description || 'Complete the assignment as instructed.'}
+                </p>
+              </div>
+
+              {/* Evaluation Rubric */}
               {assignment.aiRubric && assignment.aiRubric.length > 0 && (
                 <div className="space-y-2">
-                  <h4 className="text-xs font-bold text-slate-700">Evaluation Rubric:</h4>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Marking Rubric
+                  </span>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {assignment.aiRubric.map((rub) => (
-                      <div key={rub.id} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs">
-                        <div className="flex justify-between font-bold text-slate-800 mb-0.5">
-                          <span>{rub.title}</span>
-                          <span className="text-purple-700">{rub.weight}%</span>
+                    {assignment.aiRubric.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-xl bg-white border border-slate-200 text-xs shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between font-bold text-slate-800 mb-0.5">
+                          <span>{item.title}</span>
+                          <span className="text-purple-700 text-[11px] bg-purple-50 px-2 py-0.5 rounded-full border border-purple-100">
+                            {item.weight}%
+                          </span>
                         </div>
-                        <p className="text-[11px] text-slate-500">{rub.description}</p>
+                        <p className="text-[11px] text-slate-500 leading-normal">{item.description}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               )}
+
+              {/* Key Timeline & Deadline Info */}
+              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 border border-amber-200 text-amber-900 text-xs">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                  <span>
+                    Deadline: <strong>{assignment.deadlineDate}</strong> at 11:59:59 PM (Midnight)
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold text-amber-800 bg-amber-100/60 px-2.5 py-0.5 rounded-full">
+                  {assignment.totalMarks} Marks
+                </span>
+              </div>
             </div>
           )}
 
-          {/* --- STEP 2: Solution Document Upload (PDF or Word .docx ONLY) --- */}
+          {/* STEP 2: Solution Document Upload */}
           {step === 2 && (
             <div className="space-y-4">
-              <div className="border-2 border-dashed border-purple-200 bg-purple-50/40 rounded-2xl p-8 text-center hover:bg-purple-50 transition cursor-pointer relative">
+              {/* Dropzone */}
+              <div
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={handleDrop}
+                className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition cursor-pointer ${
+                  isDragging
+                    ? 'border-purple-600 bg-purple-50'
+                    : 'border-slate-300 hover:border-purple-400 bg-slate-50/60 hover:bg-purple-50/30'
+                }`}
+              >
                 <input
                   type="file"
                   multiple={false}
-                  disabled={isOptimizing}
+                  disabled={isProcessing}
                   accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                  onChange={handleFileUpload}
+                  onChange={handleFileInputChange}
                   className="absolute inset-0 opacity-0 cursor-pointer w-full h-full disabled:cursor-not-allowed"
                 />
-                {isOptimizing ? (
-                  <div className="flex flex-col items-center justify-center py-2">
-                    <Loader2 className="w-8 h-8 text-purple-600 animate-spin mb-2" />
-                    <p className="text-xs font-bold text-purple-900">
-                      Attaching solution document...
-                    </p>
+
+                {isProcessing ? (
+                  <div className="flex flex-col items-center justify-center py-2 space-y-2">
+                    <Loader2 className="w-8 h-8 text-purple-600 animate-spin" />
+                    <p className="text-xs font-bold text-slate-800">Verifying document...</p>
+                    <p className="text-[11px] text-slate-400">Processing file for submission</p>
                   </div>
                 ) : (
-                  <>
-                    <UploadCloud className="w-10 h-10 text-purple-600 mx-auto mb-2" />
-                    <p className="text-sm font-extrabold text-slate-800">
-                      Click or drag your completed assignment solution here
-                    </p>
-                    <p className="text-xs text-purple-700 font-semibold mt-1">
-                      Accepted formats: <strong>PDF (.pdf)</strong> or <strong>Microsoft Word (.docx, .doc)</strong>
-                    </p>
-                    <p className="text-[11px] text-slate-400 mt-1">
-                      Official document upload only • Max file size: 25 MB
-                    </p>
-                  </>
+                  <div className="space-y-2">
+                    <div className="w-12 h-12 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto">
+                      <UploadCloud className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold text-slate-800">
+                        Drop your solution document here, or <span className="text-purple-700 underline">browse</span>
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        Supported formats: <strong>PDF (.pdf)</strong> or <strong>Word (.docx, .doc)</strong>
+                      </p>
+                    </div>
+                    <p className="text-[11px] text-slate-400">Maximum file size: 25 MB</p>
+                  </div>
                 )}
               </div>
 
-              {/* Uploaded Document List */}
-              {uploadedFiles.length > 0 && (
+              {/* Attached Document Card */}
+              {attachedFile && (
                 <div className="space-y-2">
-                  <span className="text-xs font-bold text-slate-700">Attached Solution Document:</span>
-                  <div className="space-y-2">
-                    {uploadedFiles.map((file, idx) => (
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                    Attached Solution Document
+                  </span>
+                  <div className="p-4 bg-white rounded-2xl border border-purple-200 flex items-center justify-between text-xs shadow-xs">
+                    <div className="flex items-center gap-3 truncate">
                       <div
-                        key={idx}
-                        className="p-4 bg-white rounded-2xl border border-purple-200 flex items-center justify-between text-xs shadow-2xs"
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0 ${
+                          isPdf ? 'bg-rose-500' : 'bg-blue-600'
+                        }`}
                       >
-                        <div className="flex items-center gap-3 truncate">
-                          <FileText className="w-7 h-7 text-purple-700 flex-shrink-0" />
-                          <div className="truncate">
-                            <span className="font-extrabold text-slate-800 truncate block text-xs">
-                              {file.name}
-                            </span>
-                            <span className="text-[11px] text-slate-400 font-mono">
-                              {file.size >= 1024 * 1024
-                                ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-                                : `${Math.round(file.size / 1024)} KB`}{' '}
-                              • Ready for submission
-                            </span>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => removeFile(idx)}
-                          className="text-rose-500 hover:text-rose-700 p-2 rounded-xl hover:bg-rose-50 transition"
-                          title="Remove file"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <FileText className="w-5 h-5" />
                       </div>
-                    ))}
+                      <div className="truncate">
+                        <span className="font-extrabold text-slate-900 truncate block text-xs">
+                          {attachedFile.name}
+                        </span>
+                        <div className="flex items-center gap-2 text-[11px] text-slate-500 mt-0.5">
+                          <span>{formatBytes(attachedFile.size)}</span>
+                          <span>•</span>
+                          <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                            <FileCheck2 className="w-3.5 h-3.5" />
+                            Ready for grading
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadAttachedFile(attachedFile)}
+                        className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs flex items-center gap-1 transition"
+                        title="Verify / Download your file"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Verify File</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setUploadedFiles([])}
+                        className="p-2 rounded-xl text-rose-500 hover:text-rose-700 hover:bg-rose-50 transition"
+                        title="Remove attached file"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               )}
+
+              {/* Clean Guidance */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-600 space-y-1">
+                <p className="font-semibold text-slate-700">Submission Tips:</p>
+                <ul className="list-disc list-inside text-[11px] text-slate-500 space-y-0.5">
+                  <li>Ensure your Roll Number and Name are written on the title page.</li>
+                  <li>Click &quot;Verify File&quot; above to double-check that you attached the correct document.</li>
+                  <li>You can resubmit or replace your file anytime until the midnight deadline.</li>
+                </ul>
+              </div>
             </div>
           )}
 
-          {/* --- STEP 3: Review & Final Submission --- */}
+          {/* STEP 3: Review & Submit */}
           {step === 3 && (
             <div className="space-y-4">
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-emerald-950 text-xs space-y-2">
-                <div className="flex items-center gap-2 font-bold text-sm text-emerald-900">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                  Ready to Submit
+              {/* Student Identity Card */}
+              <div className="p-4 rounded-2xl bg-purple-50/70 border border-purple-200 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 font-bold">
+                    <User className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-purple-700 font-bold uppercase tracking-wider block">
+                      Submitting Student
+                    </span>
+                    <h3 className="text-xs font-extrabold text-slate-900">
+                      {currentUser?.name || 'Student'}
+                    </h3>
+                    <p className="text-[11px] text-slate-600">
+                      Roll #{currentUser?.rollNumber} • Semester {currentUser?.semester || assignment.semester} • Section{' '}
+                      {currentUser?.section || 'A1'}
+                    </p>
+                  </div>
                 </div>
-                <p>
-                  You are submitting as <strong>{currentUser?.name}</strong> (Roll #{currentUser?.rollNumber}, Section{' '}
-                  {currentUser?.section}).
-                </p>
-              </div>
-
-              {/* Summary of Document */}
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1">
-                <span className="text-slate-400 block text-[11px] font-bold uppercase tracking-wider">
-                  Solution Document Attached:
-                </span>
-                <strong className="text-purple-900 font-extrabold text-sm block">
-                  {uploadedFiles[0]?.name || 'Document Attached'}
-                </strong>
-                <p className="text-[11px] text-slate-500">
-                  Official solution document attached for instructor evaluation.
-                </p>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-3 text-amber-900 text-xs flex items-center gap-2">
-                <Clock className="w-4 h-4 text-amber-700 flex-shrink-0" />
-                <span>
-                  Reminder: The portal will automatically lock at <strong>11:59:59 PM (Midnight)</strong>. You can resubmit anytime before this deadline.
+                <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                  Verified Profile
                 </span>
               </div>
+
+              {/* Solution Summary Card */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-2">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Document Ready for Submission
+                </span>
+                <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-2.5 truncate">
+                    <FileText className={`w-5 h-5 ${isPdf ? 'text-rose-600' : 'text-blue-600'}`} />
+                    <span className="font-bold text-slate-800 text-xs truncate">
+                      {attachedFile?.name || 'No file selected'}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-500 font-mono flex-shrink-0">
+                    {formatBytes(attachedFile?.size || 0)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Resubmission / Policy Banner */}
+              {existingSub ? (
+                <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
+                  <Clock className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold">Resubmission Notice</p>
+                    <p className="text-[11px] text-amber-800 mt-0.5">
+                      You previously submitted on{' '}
+                      {new Date(existingSub.submittedAt).toLocaleDateString()} at{' '}
+                      {new Date(existingSub.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+                      Submitting now will update your solution file.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                  <span>
+                    Ready to submit! You may update or resubmit your file anytime before the midnight deadline.
+                  </span>
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Wizard Footer Controls */}
-        <div className="p-4 sm:p-6 bg-slate-50 border-t border-slate-200 flex items-center justify-between flex-shrink-0">
+        {/* Modal Footer */}
+        <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-between flex-shrink-0">
           <button
             type="button"
             disabled={step === 1}
-            onClick={() => setStep((prev) => (prev - 1) as any)}
-            className={`px-4 py-2 rounded-xl text-xs font-bold ${
-              step === 1 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-200'
+            onClick={() => setStep((prev) => (prev - 1) as 1 | 2 | 3)}
+            className={`inline-flex items-center gap-1 px-4 py-2 rounded-xl text-xs font-bold transition ${
+              step === 1
+                ? 'text-slate-300 cursor-not-allowed'
+                : 'text-slate-700 hover:bg-slate-200'
             }`}
           >
-            Back
+            <ChevronLeft className="w-4 h-4" />
+            <span>Back</span>
           </button>
 
           {step < 3 ? (
             <button
               type="button"
               onClick={() => {
-                if (step === 2 && !textSolution.trim() && uploadedFiles.length === 0) {
-                  setSubmissionError('Please enter your solution or upload a file before continuing to the review step.');
+                if (step === 2 && uploadedFiles.length === 0) {
+                  setSubmissionError('Please attach your solution document (PDF or Word) to continue.');
                   return;
                 }
                 setSubmissionError(null);
-                setStep((prev) => (prev + 1) as any);
+                setStep((prev) => (prev + 1) as 1 | 2 | 3);
               }}
-              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-md shadow-purple-900/20"
+              className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-sm transition"
             >
-              Continue to Step {step + 1}
+              <span>Continue to Step {step + 1}</span>
               <ChevronRight className="w-4 h-4" />
             </button>
           ) : (
             <button
               type="button"
+              disabled={isDeadlinePassed() || uploadedFiles.length === 0}
               onClick={handleSubmit}
-              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-lg shadow-emerald-900/20"
+              className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <CheckCircle2 className="w-4 h-4" />
-              Confirm & Submit Assignment
+              <span>Confirm & Submit Assignment</span>
             </button>
           )}
         </div>
