@@ -631,17 +631,17 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
               {/* Plagiarism Score Summary Banner */}
               <div
-                className={`p-4 rounded-2xl border flex items-center justify-between ${
+                className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
                   plagiarismReport.riskLevel === 'critical'
-                    ? 'bg-rose-50 border-rose-200 text-rose-900'
+                    ? 'bg-rose-50 border-rose-200 text-rose-950'
                     : plagiarismReport.riskLevel === 'moderate'
-                    ? 'bg-amber-50 border-amber-200 text-amber-900'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    ? 'bg-amber-50 border-amber-200 text-amber-950'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-950'
                 }`}
               >
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3.5">
                   <div
-                    className={`w-12 h-12 rounded-xl flex items-center justify-center font-mono font-black text-lg ${
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center font-mono font-black text-xl shadow-sm ${
                       plagiarismReport.riskLevel === 'critical'
                         ? 'bg-rose-600 text-white'
                         : plagiarismReport.riskLevel === 'moderate'
@@ -652,64 +652,118 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                     {plagiarismReport.peerPlagiarismScore}%
                   </div>
                   <div>
-                    <h4 className="text-sm font-extrabold">
+                    <h4 className="text-sm font-black">
                       {plagiarismReport.riskLevel === 'critical'
-                        ? 'High Peer Similarity Detected'
+                        ? 'Critical Peer Collusion Detected'
                         : plagiarismReport.riskLevel === 'moderate'
-                        ? 'Moderate Overlap Detected'
+                        ? 'Moderate Peer Overlap'
                         : 'Authentic & Original Work'}
                     </h4>
-                    <p className="text-xs opacity-90 mt-0.5">{plagiarismReport.summary}</p>
+                    <p className="text-xs opacity-90 mt-0.5 leading-relaxed">{plagiarismReport.summary}</p>
                   </div>
+                </div>
+
+                {/* Sub-metrics Pills */}
+                <div className="flex sm:flex-col gap-2 text-[11px] font-mono font-semibold self-stretch sm:self-auto justify-end">
+                  <span className="px-2.5 py-1 rounded-lg bg-white/80 border border-slate-200/60 shadow-2xs">
+                    Literal Text: <strong>{plagiarismReport.literalScore}%</strong>
+                  </span>
+                  <span className="px-2.5 py-1 rounded-lg bg-white/80 border border-slate-200/60 shadow-2xs">
+                    MOSS Code Structure: <strong>{plagiarismReport.structuralCodeScore}%</strong>
+                  </span>
                 </div>
               </div>
 
-              {/* Matched Peer Info */}
+              {/* Matched Peer Banner */}
               {plagiarismReport.matchedWithRollNumber && (
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                  <span className="font-bold text-slate-700">Highest Overlapping Peer Submission:</span>{' '}
-                  <span className="font-bold text-purple-700">
-                    Roll #{plagiarismReport.matchedWithRollNumber} ({plagiarismReport.matchedWithName})
+                <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs flex items-center justify-between">
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold tracking-wider">
+                      Highest Correlating Peer Submission:
+                    </span>
+                    <span className="font-extrabold text-slate-900 text-sm">
+                      Roll #{plagiarismReport.matchedWithRollNumber} — {plagiarismReport.matchedWithName}
+                    </span>
+                  </div>
+                  <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800">
+                    MOSS AST Tokenizer Verified
                   </span>
                 </div>
               )}
 
-              {/* Matching Snippets Excerpts */}
-              <div>
-                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                  Matching Sentence Analysis:
-                </h4>
+              {/* Side-by-Side Colliding Snippets Excerpts */}
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+                    Verifiable Collision Evidence ({plagiarismReport.matchingSnippets.length} Matches Detected)
+                  </h4>
+                  <span className="text-[10px] text-slate-500 italic">
+                    Comparing Target Student vs Matched Peer
+                  </span>
+                </div>
+
                 {plagiarismReport.matchingSnippets.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic p-3 bg-slate-50 rounded-xl border border-slate-200">
-                    No verbatim sentence collisions detected against classmates.
+                  <p className="text-xs text-slate-500 italic p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center">
+                    No verbatim sentence collisions or structural code matches detected against classmates.
                   </p>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     {plagiarismReport.matchingSnippets.map((snip, idx) => (
-                      <div key={idx} className="p-3 rounded-xl border border-rose-200 bg-rose-50/40 text-xs space-y-1">
-                        <div className="flex items-center justify-between text-[11px] text-rose-800 font-bold">
-                          <span>Snippet #{idx + 1}</span>
-                          <span>Overlaps with Roll #{snip.peerRollNumber} ({snip.peerStudentName})</span>
+                      <div
+                        key={idx}
+                        className="p-4 rounded-2xl border border-rose-200 bg-rose-50/30 text-xs space-y-2.5 shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-extrabold text-rose-900 flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-md bg-rose-200 text-rose-900 flex items-center justify-center font-mono text-[10px]">
+                              {idx + 1}
+                            </span>
+                            {snip.matchType}
+                          </span>
+                          <span className="font-mono font-bold px-2 py-0.5 rounded bg-rose-200/80 text-rose-900 text-[10px]">
+                            {snip.similarity}% Congruence
+                          </span>
                         </div>
-                        <p className="text-slate-800 font-mono text-[11px] bg-white p-2 rounded-lg border border-rose-100">
-                          &ldquo;{snip.studentSnippet}&rdquo;
-                        </p>
+
+                        {/* Side-by-side Columns */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                          <div className="p-3 bg-white rounded-xl border border-rose-200 space-y-1">
+                            <span className="text-[10px] font-bold text-slate-500 block uppercase tracking-wider">
+                              Target Student (Roll #{plagiarismTargetSub.studentRollNumber}):
+                            </span>
+                            <pre className="font-mono text-slate-800 whitespace-pre-wrap leading-relaxed text-[10.5px]">
+                              {snip.studentSnippet}
+                            </pre>
+                          </div>
+
+                          <div className="p-3 bg-white rounded-xl border border-rose-200 space-y-1">
+                            <span className="text-[10px] font-bold text-slate-500 block uppercase tracking-wider">
+                              Matched Peer (Roll #{snip.peerRollNumber} — {snip.peerStudentName}):
+                            </span>
+                            <pre className="font-mono text-slate-800 whitespace-pre-wrap leading-relaxed text-[10.5px]">
+                              {snip.peerSnippet}
+                            </pre>
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex items-center justify-between pt-3 border-t border-slate-100">
+                <span className="text-[11px] text-slate-500">
+                  Compared against {plagiarismReport.totalComparisons} classmate submissions
+                </span>
                 <button
                   type="button"
                   onClick={() => {
                     setPlagiarismReport(null);
                     setPlagiarismTargetSub(null);
                   }}
-                  className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs"
+                  className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-sm"
                 >
-                  Close Report
+                  Close Audit Report
                 </button>
               </div>
             </div>
