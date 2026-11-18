@@ -491,67 +491,6 @@ export const LoginPage: React.FC = () => {
                       </>
                     )}
                   </button>
-
-                  {/* Demo Quick-Fill Bar */}
-                  <div className="pt-3 border-t border-slate-800/80 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
-                        <Sparkles className="w-3 h-3 text-purple-400" />
-                        Quick Demo Logins
-                      </span>
-                      <span className="text-[10px] text-slate-500">Click to fill</span>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIdentifier('admin');
-                          setPassword('admin123');
-                          setLoginError(null);
-                        }}
-                        className="p-2 rounded-xl bg-slate-950 hover:bg-purple-950/60 border border-slate-800 hover:border-purple-600/60 text-left transition group"
-                        title="Sign in as College Admin"
-                      >
-                        <span className="font-extrabold text-white text-[11px] block group-hover:text-purple-300">
-                          Admin
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono block">admin123</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIdentifier('03001234567');
-                          setPassword('teacher123');
-                          setLoginError(null);
-                        }}
-                        className="p-2 rounded-xl bg-slate-950 hover:bg-indigo-950/60 border border-slate-800 hover:border-indigo-600/60 text-left transition group"
-                        title="Sign in as Faculty Member"
-                      >
-                        <span className="font-extrabold text-white text-[11px] block group-hover:text-indigo-300">
-                          Teacher
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono block">teacher123</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIdentifier('BCS1-A1-001');
-                          setPassword('student123');
-                          setLoginError(null);
-                        }}
-                        className="p-2 rounded-xl bg-slate-950 hover:bg-emerald-950/60 border border-slate-800 hover:border-emerald-600/60 text-left transition group"
-                        title="Sign in as BSCS Student"
-                      >
-                        <span className="font-extrabold text-white text-[11px] block group-hover:text-emerald-300">
-                          Student
-                        </span>
-                        <span className="text-[10px] text-slate-400 font-mono block">student123</span>
-                      </button>
-                    </div>
-                  </div>
                 </form>
               </div>
             )}
