@@ -197,12 +197,47 @@ export const supabaseService = {
     }
   },
 
-  async deleteUser(id: string): Promise<boolean> {
+  async deleteUser(
+    id: string,
+    loginId?: string,
+    extra?: { semester?: number; section?: string; rollNumber?: number }
+  ): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
-      const { error } = await supabase.from('users').delete().eq('id', id);
-      return !error;
-    } catch {
+      // 1. Delete associated student submissions to avoid foreign key errors
+      await supabase.from('submissions').delete().eq('student_id', id);
+
+      if (extra?.rollNumber != null && extra?.semester != null && extra?.section) {
+        await supabase
+          .from('submissions')
+          .delete()
+          .eq('student_roll_number', extra.rollNumber)
+          .eq('student_semester', extra.semester)
+          .eq('student_section', extra.section);
+      }
+
+      // 2. Delete user by id
+      const { error: err1 } = await supabase.from('users').delete().eq('id', id);
+
+      // 3. Also delete by login_id if available
+      if (loginId) {
+        await supabase.from('users').delete().eq('login_id', loginId);
+      }
+
+      // 4. Also delete by (semester, section, roll_number) if available
+      if (extra?.rollNumber != null && extra?.semester != null && extra?.section) {
+        await supabase
+          .from('users')
+          .delete()
+          .eq('role', 'student')
+          .eq('roll_number', extra.rollNumber)
+          .eq('semester', extra.semester)
+          .eq('section', extra.section);
+      }
+
+      return !err1;
+    } catch (err) {
+      console.warn('Supabase delete user exception:', err);
       return false;
     }
   },

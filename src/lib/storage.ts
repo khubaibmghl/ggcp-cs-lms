@@ -16,6 +16,7 @@ const STORAGE_KEYS = {
   ACTIVE_USER_ID: 'college_lms_active_user_id',
   SYNC_QUEUE: 'college_lms_sync_queue',
   CURRICULUM_VERSION: 'college_lms_curriculum_version',
+  DELETED_USER_IDS: 'college_lms_deleted_user_ids',
 };
 
 export interface SyncQueueItem {
@@ -105,7 +106,11 @@ class LocalDataStore {
           if (item.action === 'upsert') {
             success = await supabaseService.upsertUser(item.payload);
           } else if (item.action === 'delete') {
-            success = await supabaseService.deleteUser(item.id);
+            success = await supabaseService.deleteUser(item.id, item.payload?.loginId, {
+              semester: item.payload?.semester,
+              section: item.payload?.section,
+              rollNumber: item.payload?.rollNumber,
+            });
           }
         } else if (item.entity === 'subject') {
           if (item.action === 'upsert') {
@@ -246,25 +251,51 @@ class LocalDataStore {
 
       // Users: Reconcile and merge
       if (cloudUsers && cloudUsers.length > 0) {
-        const localUsers = this.getUsers();
-        const merged = [...cloudUsers];
+        // Filter out any cloud user that has been deleted locally (tombstoned)
+        const cleanCloudUsers = cloudUsers.filter(
+          (cu) => !this.isUserDeleted(cu.id, cu.loginId, cu.semester, cu.section, cu.rollNumber)
+        );
 
-        // Ensure locally registered students not yet in cloud are preserved and queued
+        // If cloud still has tombstoned users, actively purge them from cloud
+        for (const cu of cloudUsers) {
+          if (this.isUserDeleted(cu.id, cu.loginId, cu.semester, cu.section, cu.rollNumber)) {
+            supabaseService.deleteUser(cu.id, cu.loginId, {
+              semester: cu.semester,
+              section: cu.section,
+              rollNumber: cu.rollNumber,
+            }).catch(() => {});
+          }
+        }
+
+        const syncQueue = this.getSyncQueue();
+        const pendingUpsertIds = new Set(
+          syncQueue.filter((q) => q.entity === 'user' && q.action === 'upsert').map((q) => q.id)
+        );
+
+        const localUsers = this.getUsers().filter(
+          (lu) => !this.isUserDeleted(lu.id, lu.loginId, lu.semester, lu.section, lu.rollNumber)
+        );
+
+        const merged = [...cleanCloudUsers];
+
+        // ONLY preserve local users if they are EXPLICITLY queued as pending offline upserts!
+        // DO NOT resurrect deleted users!
         for (const lu of localUsers) {
           const inCloud = merged.some(
             (cu) =>
               cu.id === lu.id ||
               (cu.loginId && lu.loginId && cu.loginId.toLowerCase() === lu.loginId.toLowerCase())
           );
-          if (!inCloud) {
+          if (!inCloud && pendingUpsertIds.has(lu.id)) {
             merged.push(lu);
-            this.enqueueSync('user', 'upsert', lu);
           }
         }
         this.set(STORAGE_KEYS.USERS, merged);
       } else if (isSupabaseConfigured) {
-        // Seed cloud DB with existing local users
-        const localUsers = this.getUsers();
+        // Seed cloud DB with existing local users (excluding any tombstones)
+        const localUsers = this.getUsers().filter(
+          (lu) => !this.isUserDeleted(lu.id, lu.loginId, lu.semester, lu.section, lu.rollNumber)
+        );
         for (const u of localUsers) {
           this.enqueueSync('user', 'upsert', u);
         }
@@ -346,10 +377,71 @@ class LocalDataStore {
     }
   }
 
+  getDeletedUserIds(): string[] {
+    return this.get<string[]>(STORAGE_KEYS.DELETED_USER_IDS, []);
+  }
+
+  addDeletedUserId(identifier: string): void {
+    if (!this.isClient || !identifier) return;
+    const current = new Set(this.getDeletedUserIds().map((s) => String(s).toLowerCase()));
+    current.add(String(identifier).toLowerCase());
+    this.set(STORAGE_KEYS.DELETED_USER_IDS, Array.from(current));
+  }
+
+  isUserDeleted(id?: string, loginId?: string, sem?: number, sec?: string, roll?: number): boolean {
+    const deleted = new Set(this.getDeletedUserIds().map((s) => String(s).toLowerCase()));
+    if (id && deleted.has(String(id).toLowerCase())) return true;
+    if (loginId && deleted.has(String(loginId).toLowerCase())) return true;
+    if (sem != null && sec && roll != null) {
+      const classKey = `sem${sem}-sec${sec}-roll${roll}`.toLowerCase();
+      if (deleted.has(classKey)) return true;
+    }
+    return false;
+  }
+
   deleteUser(id: string): void {
+    const targetUser = this.getUsers().find((u) => u.id === id);
     const users = this.getUsers().filter((u) => u.id !== id);
     this.saveUsers(users);
-    this.enqueueSync('user', 'delete', { id });
+
+    // Record tombstones to prevent zombie resurrection across background syncs
+    this.addDeletedUserId(id);
+    if (targetUser?.loginId) {
+      this.addDeletedUserId(targetUser.loginId);
+    }
+    if (targetUser?.semester && targetUser?.section && targetUser?.rollNumber) {
+      this.addDeletedUserId(
+        `sem${targetUser.semester}-sec${targetUser.section}-roll${targetUser.rollNumber}`
+      );
+    }
+
+    // Also remove any submissions associated with this student
+    const submissions = this.getSubmissions().filter((s) => s.studentId !== id);
+    this.saveSubmissions(submissions);
+
+    // Enqueue cloud sync action
+    this.enqueueSync('user', 'delete', {
+      id,
+      loginId: targetUser?.loginId,
+      semester: targetUser?.semester,
+      section: targetUser?.section,
+      rollNumber: targetUser?.rollNumber,
+    });
+
+    // Also call server API in background to ensure database-level purge
+    if (typeof window !== 'undefined') {
+      fetch('/api/admin/delete-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId: id,
+          loginId: targetUser?.loginId,
+          semester: targetUser?.semester,
+          section: targetUser?.section,
+          rollNumber: targetUser?.rollNumber,
+        }),
+      }).catch((err) => console.warn('Background delete student API call:', err));
+    }
   }
 
   // Active User session

@@ -20,6 +20,7 @@ import {
   Building2,
   HelpCircle,
   Sparkle,
+  Trash2,
 } from 'lucide-react';
 
 export interface PasswordStrengthResult {
@@ -108,7 +109,7 @@ export function evaluatePasswordStrength(password: string): PasswordStrengthResu
 }
 
 export const LoginPage: React.FC = () => {
-  const { login, registerStudent, users } = useAuth();
+  const { login, registerStudent, users, deleteStudent } = useAuth();
 
   // Mode: 'login' or 'register'
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -667,15 +668,43 @@ export const LoginPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Real-time Inline Duplicate Roll Number Notification */}
+                      {/* Real-time Inline Duplicate Roll Number Notification with One-Click Release */}
                       {duplicateStudent ? (
-                        <div className="p-3 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-300 text-xs flex items-start gap-2.5 animate-in fade-in">
-                          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
-                          <div>
-                            <p className="font-bold">Roll #{rollNumber} is already taken in this class!</p>
-                            <p className="text-[11px] text-rose-300/80 mt-0.5 leading-snug">
-                              Already registered to student <strong>{duplicateStudent.name}</strong> in Semester {semester} ({section}). Each student in this class must use a unique roll number.
-                            </p>
+                        <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex flex-col gap-2.5 animate-in fade-in">
+                          <div className="flex items-start gap-2.5">
+                            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                            <div>
+                              <p className="font-bold text-white">Roll #{rollNumber} is already taken in this class!</p>
+                              <p className="text-[11px] text-rose-200/80 mt-0.5 leading-snug">
+                                Already registered to student <strong>{duplicateStudent.name}</strong> in Semester {semester} ({section}). Each student in this class must use a unique roll number.
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="pt-2 border-t border-rose-500/30 flex items-center justify-between gap-2">
+                            <span className="text-[10px] text-rose-300/80">Need this roll number?</span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                if (
+                                  window.confirm(
+                                    `Are you sure you want to release Roll #${rollNumber} (${duplicateStudent.name}) from Semester ${semester} (${section})?`
+                                  )
+                                ) {
+                                  await deleteStudent(duplicateStudent.id, {
+                                    loginId: duplicateStudent.loginId,
+                                    semester: duplicateStudent.semester,
+                                    section: duplicateStudent.section,
+                                    rollNumber: duplicateStudent.rollNumber,
+                                  });
+                                }
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-900/90 hover:bg-rose-800 text-white text-[11px] font-bold border border-rose-600/60 transition shadow-xs"
+                              title="Purge previous record and free this roll number immediately"
+                            >
+                              <Trash2 className="w-3 h-3 text-rose-300" />
+                              <span>Release / Free Roll #{rollNumber}</span>
+                            </button>
                           </div>
                         </div>
                       ) : (
@@ -697,7 +726,7 @@ export const LoginPage: React.FC = () => {
                             <input
                               type={showRegPassword ? 'text' : 'password'}
                               required
-                              placeholder="Min 8 chars (e.g. Pasrur123)"
+                              placeholder="Min 8 chars "
                               value={regPassword}
                               onChange={(e) => setRegPassword(e.target.value)}
                               className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
@@ -737,13 +766,12 @@ export const LoginPage: React.FC = () => {
                               Password Security Level:
                             </span>
                             <span
-                              className={`font-extrabold px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${
-                                passwordStrength.label === 'Strong'
+                              className={`font-extrabold px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${passwordStrength.label === 'Strong'
                                   ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
                                   : passwordStrength.label === 'Intermediate'
-                                  ? 'bg-amber-950 text-amber-300 border border-amber-500/40'
-                                  : 'bg-rose-950 text-rose-300 border border-rose-500/40'
-                              }`}
+                                    ? 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                                    : 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                                }`}
                             >
                               {passwordStrength.label}
                             </span>
@@ -754,11 +782,10 @@ export const LoginPage: React.FC = () => {
                             {[1, 2, 3, 4].map((step) => (
                               <div
                                 key={step}
-                                className={`h-full rounded-full transition-all duration-300 ${
-                                  passwordStrength.score >= step
+                                className={`h-full rounded-full transition-all duration-300 ${passwordStrength.score >= step
                                     ? passwordStrength.color
                                     : 'bg-slate-800'
-                                }`}
+                                  }`}
                               />
                             ))}
                           </div>
@@ -766,25 +793,22 @@ export const LoginPage: React.FC = () => {
                           {/* Security Checklist Pills */}
                           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] pt-1">
                             <span
-                              className={`flex items-center gap-1 ${
-                                passwordStrength.hasMinLength ? 'text-emerald-400' : 'text-slate-500'
-                              }`}
+                              className={`flex items-center gap-1 ${passwordStrength.hasMinLength ? 'text-emerald-400' : 'text-slate-500'
+                                }`}
                             >
                               <span>{passwordStrength.hasMinLength ? '✓' : '○'}</span>
                               Min 8 characters
                             </span>
                             <span
-                              className={`flex items-center gap-1 ${
-                                passwordStrength.hasLettersAndNumbers ? 'text-emerald-400' : 'text-slate-500'
-                              }`}
+                              className={`flex items-center gap-1 ${passwordStrength.hasLettersAndNumbers ? 'text-emerald-400' : 'text-slate-500'
+                                }`}
                             >
                               <span>{passwordStrength.hasLettersAndNumbers ? '✓' : '○'}</span>
                               Letters & numbers mix
                             </span>
                             <span
-                              className={`flex items-center gap-1 ${
-                                passwordStrength.hasNoTrivialPatterns ? 'text-emerald-400' : 'text-slate-500'
-                              }`}
+                              className={`flex items-center gap-1 ${passwordStrength.hasNoTrivialPatterns ? 'text-emerald-400' : 'text-slate-500'
+                                }`}
                             >
                               <span>{passwordStrength.hasNoTrivialPatterns ? '✓' : '○'}</span>
                               No simple patterns (00000, 123456)

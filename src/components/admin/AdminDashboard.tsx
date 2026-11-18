@@ -36,7 +36,7 @@ interface AdminDashboardProps {
 }
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) => {
-  const { users, approveTeacher, rejectTeacher, createTeacherByAdmin } = useAuth();
+  const { users, approveTeacher, rejectTeacher, createTeacherByAdmin, deleteStudent } = useAuth();
   const { showSuccess, showError, showWarning, confirmDialog } = useToast();
   const [subjects, setSubjects] = useState<Subject[]>(dataStore.getSubjects());
   const [selectedSemester, setSelectedSemester] = useState<SemesterNumber>(1);
@@ -160,12 +160,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
   const handleDeleteStudent = (stud: User) => {
     confirmDialog({
       title: 'Remove Student Record?',
-      message: `Are you sure you want to remove ${stud.name} (Roll #${stud.rollNumber}, Sem ${stud.semester} ${stud.section}) from the college system?`,
+      message: `Are you sure you want to remove ${stud.name} (Roll #${stud.rollNumber}, Sem ${stud.semester} ${stud.section}) from the college system? This frees up Roll #${stud.rollNumber} immediately.`,
       confirmText: 'Remove Student',
       isDanger: true,
-      onConfirm: () => {
-        dataStore.deleteUser(stud.id);
-        showSuccess('Student Removed', `${stud.name} has been removed from the registry.`);
+      onConfirm: async () => {
+        await deleteStudent(stud.id, {
+          loginId: stud.loginId,
+          semester: stud.semester,
+          section: stud.section,
+          rollNumber: stud.rollNumber,
+        });
+        showSuccess('Student Removed', `${stud.name} (Roll #${stud.rollNumber}) has been purged from the registry.`);
       },
     });
   };

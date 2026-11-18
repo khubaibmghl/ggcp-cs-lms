@@ -40,6 +40,10 @@ interface AuthContextType {
   }) => User;
   approveTeacher: (teacherId: string) => void;
   rejectTeacher: (teacherId: string) => void;
+  deleteStudent: (
+    studentId: string,
+    extra?: { loginId?: string; semester?: number; section?: string; rollNumber?: number }
+  ) => Promise<void>;
   logout: () => void;
   refreshUsers: () => void;
 }
@@ -269,6 +273,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUsers(dataStore.getUsers());
   };
 
+  const deleteStudent = async (
+    studentId: string,
+    extra?: { loginId?: string; semester?: number; section?: string; rollNumber?: number }
+  ) => {
+    dataStore.deleteUser(studentId);
+    try {
+      await fetch('/api/admin/delete-student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          studentId,
+          loginId: extra?.loginId,
+          semester: extra?.semester,
+          section: extra?.section,
+          rollNumber: extra?.rollNumber,
+        }),
+      });
+    } catch (err) {
+      console.warn('Delete student API call warning:', err);
+    }
+    setUsers(dataStore.getUsers());
+  };
+
   const logout = () => {
     dataStore.setActiveUserId(null);
     setCurrentUser(null);
@@ -289,6 +316,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         createTeacherByAdmin,
         approveTeacher,
         rejectTeacher,
+        deleteStudent,
         logout,
         refreshUsers,
       }}
