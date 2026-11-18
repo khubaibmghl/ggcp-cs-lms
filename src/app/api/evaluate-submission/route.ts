@@ -452,7 +452,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Optional: Call Google Gemini API if provided by user or environment
-    const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || (process.env as any).GENINI_API_KEY;
     if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 10) {
       try {
         const prompt = `You are a strict, fair, and meticulous Computer Science Professor at Govt. Graduate College Pasrur (GGC Pasrur).
