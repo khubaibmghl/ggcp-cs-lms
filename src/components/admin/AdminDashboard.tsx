@@ -14,6 +14,8 @@ import {
   Users,
   GraduationCap,
   ShieldCheck,
+  ShieldAlert,
+  AlertTriangle,
   Search,
   Trash2,
   AlertCircle,
@@ -50,6 +52,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
   const [editSemester, setEditSemester] = useState<SemesterNumber>(1);
   const [editCreditHours, setEditCreditHours] = useState(3);
   const [editDescription, setEditDescription] = useState('');
+
+  // Custom Delete Student Confirmation Modal State
+  const [studentToDelete, setStudentToDelete] = useState<User | null>(null);
+  const [isDeletingStudent, setIsDeletingStudent] = useState(false);
 
   // Bulk Import Students Modal State
   const [showBulkImportModal, setShowBulkImportModal] = useState(false);
@@ -158,21 +164,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
   };
 
   const handleDeleteStudent = (stud: User) => {
-    confirmDialog({
-      title: 'Remove Student Record?',
-      message: `Are you sure you want to remove ${stud.name} (Roll #${stud.rollNumber}, Sem ${stud.semester} ${stud.section}) from the college system? This frees up Roll #${stud.rollNumber} immediately.`,
-      confirmText: 'Remove Student',
-      isDanger: true,
-      onConfirm: async () => {
-        await deleteStudent(stud.id, {
-          loginId: stud.loginId,
-          semester: stud.semester,
-          section: stud.section,
-          rollNumber: stud.rollNumber,
-        });
-        showSuccess('Student Removed', `${stud.name} (Roll #${stud.rollNumber}) has been purged from the registry.`);
-      },
-    });
+    setStudentToDelete(stud);
+  };
+
+  const handleConfirmDeleteStudent = async () => {
+    if (!studentToDelete) return;
+    setIsDeletingStudent(true);
+    try {
+      await deleteStudent(studentToDelete.id, {
+        loginId: studentToDelete.loginId,
+        semester: studentToDelete.semester,
+        section: studentToDelete.section,
+        rollNumber: studentToDelete.rollNumber,
+      });
+      showSuccess(
+        'Student Removed',
+        `${studentToDelete.name} (Roll #${studentToDelete.rollNumber}) has been permanently deleted from the college registry.`
+      );
+      setStudentToDelete(null);
+    } catch {
+      showError('Deletion Failed', 'Failed to remove student record. Please try again.');
+    } finally {
+      setIsDeletingStudent(false);
+    }
   };
 
   const handleExportRosterCsv = () => {
@@ -1778,6 +1792,122 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ currentTab }) =>
                   </span>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ========================================================================= */}
+      {/* CUSTOM-DESIGNED STUDENT DELETION CONFIRMATION ALERT MODAL                */}
+      {/* ========================================================================= */}
+      {studentToDelete && (
+        <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full overflow-hidden shadow-2xl border border-rose-200 animate-in zoom-in-95">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-rose-950 via-rose-900 to-slate-900 p-6 text-white flex items-start justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-rose-500/20 border border-rose-400/40 flex items-center justify-center flex-shrink-0 text-rose-400">
+                  <ShieldAlert className="w-6 h-6" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-rose-300 block">
+                    Administrative Action Required
+                  </span>
+                  <h3 className="text-lg font-black text-white">
+                    Confirm Student Deletion
+                  </h3>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={isDeletingStudent}
+                onClick={() => setStudentToDelete(null)}
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white/80 hover:text-white flex items-center justify-center font-bold text-xs transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5">
+              {/* Student Identity Summary Card */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-10 h-10 rounded-xl bg-purple-100 text-purple-900 font-mono font-black text-sm flex items-center justify-center border border-purple-200">
+                      #{studentToDelete.rollNumber}
+                    </span>
+                    <div>
+                      <h4 className="text-sm font-extrabold text-slate-900">{studentToDelete.name}</h4>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        Father: {studentToDelete.fatherName || 'Not recorded'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <span className="px-3 py-1 rounded-full bg-purple-50 text-purple-800 text-xs font-bold border border-purple-200">
+                    Sem {studentToDelete.semester} ({studentToDelete.section})
+                  </span>
+                </div>
+
+                <div className="pt-2.5 border-t border-slate-200/80 grid grid-cols-2 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block font-medium">System Login ID:</span>
+                    <strong className="font-mono text-slate-800">{studentToDelete.loginId}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block font-medium">Registered Date:</span>
+                    <span className="text-slate-700 font-medium">
+                      {new Date(studentToDelete.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* High-visibility Warning Notice */}
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-1.5">
+                <div className="flex items-center gap-1.5 font-bold text-rose-800">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                  <span>Permanent Database &amp; Cloud Purge</span>
+                </div>
+                <p className="text-[11px] text-rose-800/85 leading-relaxed">
+                  Removing <strong>{studentToDelete.name}</strong> will completely wipe their profile, assignment submissions, marks, and evaluations from the college database and cloud storage.
+                </p>
+                <p className="text-[11px] text-rose-900 font-bold pt-1">
+                  💡 Roll #{studentToDelete.rollNumber} in Semester {studentToDelete.semester} (Section {studentToDelete.section}) will be freed immediately for new student registration.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={isDeletingStudent}
+                onClick={() => setStudentToDelete(null)}
+                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/70 transition"
+              >
+                Cancel &amp; Keep Student
+              </button>
+
+              <button
+                type="button"
+                disabled={isDeletingStudent}
+                onClick={handleConfirmDeleteStudent}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs shadow-md transition disabled:opacity-50"
+              >
+                {isDeletingStudent ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Purging Student...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4 text-white" />
+                    <span>Permanently Delete Student</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>

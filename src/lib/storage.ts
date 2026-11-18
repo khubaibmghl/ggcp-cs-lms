@@ -28,6 +28,10 @@ export interface SyncQueueItem {
   retryCount: number;
 }
 
+const SAMPLE_ASSIGNMENT_IDS = new Set(['asg-301-01', 'asg-301-02', 'asg-501-01', 'asg-101-01']);
+const SAMPLE_SUBMISSION_IDS = new Set(['sub-001', 'sub-002', 'sub-003']);
+const SAMPLE_STUDENT_IDS = new Set(['usr-stud-1', 'usr-stud-2', 'usr-stud-3', 'usr-stud-4', 'usr-stud-5']);
+
 // Safe localStorage wrapper with Non-Destructive Migrations & Resilient Sync Queue
 class LocalDataStore {
   private isClient = typeof window !== 'undefined';
@@ -161,28 +165,30 @@ class LocalDataStore {
   init(): void {
     if (!this.isClient) return;
 
-    const CURRICULUM_VERSION = 'v5_fall_official_odd_semesters';
+    const CURRICULUM_VERSION = 'v7_clean_production_zero_samples';
     const currentVersion = localStorage.getItem(STORAGE_KEYS.CURRICULUM_VERSION);
 
     if (currentVersion !== CURRICULUM_VERSION) {
-      // 1. NON-DESTRUCTIVE USER PRESERVATION:
-      // Keep ALL student registrations and custom faculty members created by administrators!
+      // 1. NON-DESTRUCTIVE USER PRESERVATION (Exclude sample students):
+      // Keep real registered students and custom faculty created by administrators
       const existingUsers = this.get<User[]>(STORAGE_KEYS.USERS, []);
-      const existingStudents = existingUsers.filter((u) => u.role === 'student');
+      const realStudents = existingUsers.filter(
+        (u) => u.role === 'student' && !SAMPLE_STUDENT_IDS.has(u.id) && !this.isUserDeleted(u.id, u.loginId, u.semester, u.section, u.rollNumber)
+      );
       const customTeachers = existingUsers.filter(
         (u) => u.role === 'teacher' && !INITIAL_USERS.some((iu) => iu.id === u.id)
       );
 
       const mergedUsers: User[] = [...INITIAL_USERS];
 
-      // Re-insert all student registrations
-      existingStudents.forEach((stud) => {
+      // Re-insert real student registrations
+      realStudents.forEach((stud) => {
         if (!mergedUsers.some((u) => u.id === stud.id || (u.loginId && stud.loginId && u.loginId.toLowerCase() === stud.loginId.toLowerCase()))) {
           mergedUsers.push(stud);
         }
       });
 
-      // Re-insert all custom faculty
+      // Re-insert custom faculty
       customTeachers.forEach((teach) => {
         if (!mergedUsers.some((u) => u.id === teach.id || (u.phone && teach.phone && u.phone === teach.phone))) {
           mergedUsers.push(teach);
@@ -191,25 +197,24 @@ class LocalDataStore {
 
       this.set(STORAGE_KEYS.USERS, mergedUsers);
 
-      // 2. NON-DESTRUCTIVE SUBJECTS MERGE:
+      // 2. OFFICIAL SUBJECTS:
       const existingSubjects = this.get<Subject[]>(STORAGE_KEYS.SUBJECTS, []);
       const customSubjects = existingSubjects.filter(
         (s) => !INITIAL_SUBJECTS.some((is) => is.id === s.id || is.code === s.code)
       );
       this.set(STORAGE_KEYS.SUBJECTS, [...INITIAL_SUBJECTS, ...customSubjects]);
 
-      // 3. NON-DESTRUCTIVE ASSIGNMENTS MERGE:
+      // 3. CLEAN ASSIGNMENTS (Purge sample assignments):
       const existingAssignments = this.get<Assignment[]>(STORAGE_KEYS.ASSIGNMENTS, []);
-      const teacherCreatedAssignments = existingAssignments.filter(
-        (a) => !INITIAL_ASSIGNMENTS.some((ia) => ia.id === a.id)
-      );
-      this.set(STORAGE_KEYS.ASSIGNMENTS, [...INITIAL_ASSIGNMENTS, ...teacherCreatedAssignments]);
+      const realAssignments = existingAssignments.filter((a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id));
+      this.set(STORAGE_KEYS.ASSIGNMENTS, realAssignments);
 
-      // 4. SUBMISSIONS PRESERVATION:
-      // Submissions are strictly preserved and never wiped!
-      if (!localStorage.getItem(STORAGE_KEYS.SUBMISSIONS)) {
-        this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
-      }
+      // 4. CLEAN SUBMISSIONS (Purge sample submissions):
+      const existingSubmissions = this.get<Submission[]>(STORAGE_KEYS.SUBMISSIONS, []);
+      const realSubmissions = existingSubmissions.filter(
+        (s) => !SAMPLE_SUBMISSION_IDS.has(s.id) && !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId)
+      );
+      this.set(STORAGE_KEYS.SUBMISSIONS, realSubmissions);
 
       localStorage.setItem(STORAGE_KEYS.CURRICULUM_VERSION, CURRICULUM_VERSION);
     } else {
@@ -252,13 +257,14 @@ class LocalDataStore {
       // Users: Reconcile and merge
       if (cloudUsers && cloudUsers.length > 0) {
         // Filter out any cloud user that has been deleted locally (tombstoned)
+        // Filter out any cloud user that has been deleted locally (tombstoned) or is sample
         const cleanCloudUsers = cloudUsers.filter(
-          (cu) => !this.isUserDeleted(cu.id, cu.loginId, cu.semester, cu.section, cu.rollNumber)
+          (cu) => !SAMPLE_STUDENT_IDS.has(cu.id) && !this.isUserDeleted(cu.id, cu.loginId, cu.semester, cu.section, cu.rollNumber)
         );
 
-        // If cloud still has tombstoned users, actively purge them from cloud
+        // If cloud still has tombstoned users or sample students, actively purge them from cloud
         for (const cu of cloudUsers) {
-          if (this.isUserDeleted(cu.id, cu.loginId, cu.semester, cu.section, cu.rollNumber)) {
+          if (SAMPLE_STUDENT_IDS.has(cu.id) || this.isUserDeleted(cu.id, cu.loginId, cu.semester, cu.section, cu.rollNumber)) {
             supabaseService.deleteUser(cu.id, cu.loginId, {
               semester: cu.semester,
               section: cu.section,
@@ -273,7 +279,7 @@ class LocalDataStore {
         );
 
         const localUsers = this.getUsers().filter(
-          (lu) => !this.isUserDeleted(lu.id, lu.loginId, lu.semester, lu.section, lu.rollNumber)
+          (lu) => !SAMPLE_STUDENT_IDS.has(lu.id) && !this.isUserDeleted(lu.id, lu.loginId, lu.semester, lu.section, lu.rollNumber)
         );
 
         const merged = [...cleanCloudUsers];
@@ -292,9 +298,9 @@ class LocalDataStore {
         }
         this.set(STORAGE_KEYS.USERS, merged);
       } else if (isSupabaseConfigured) {
-        // Seed cloud DB with existing local users (excluding any tombstones)
+        // Seed cloud DB with existing local users (excluding any tombstones or samples)
         const localUsers = this.getUsers().filter(
-          (lu) => !this.isUserDeleted(lu.id, lu.loginId, lu.semester, lu.section, lu.rollNumber)
+          (lu) => !SAMPLE_STUDENT_IDS.has(lu.id) && !this.isUserDeleted(lu.id, lu.loginId, lu.semester, lu.section, lu.rollNumber)
         );
         for (const u of localUsers) {
           this.enqueueSync('user', 'upsert', u);
@@ -319,10 +325,17 @@ class LocalDataStore {
         }
       }
 
-      // Assignments: Reconcile and merge
+      // Assignments: Reconcile and merge (purge any sample assignments from cloud too)
       if (cloudAssignments && cloudAssignments.length > 0) {
-        const localAsgs = this.getAssignments();
-        const mergedAsgs = [...cloudAssignments];
+        const cleanCloudAsgs = cloudAssignments.filter((a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id));
+        for (const a of cloudAssignments) {
+          if (SAMPLE_ASSIGNMENT_IDS.has(a.id)) {
+            supabaseService.deleteAssignment(a.id).catch(() => {});
+          }
+        }
+
+        const localAsgs = this.getAssignments().filter((a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id));
+        const mergedAsgs = [...cleanCloudAsgs];
         for (const la of localAsgs) {
           if (!mergedAsgs.some((ca) => ca.id === la.id)) {
             mergedAsgs.push(la);
@@ -332,10 +345,21 @@ class LocalDataStore {
         this.set(STORAGE_KEYS.ASSIGNMENTS, mergedAsgs);
       }
 
-      // Submissions: Reconcile and merge
+      // Submissions: Reconcile and merge (purge any sample submissions from cloud too)
       if (cloudSubmissions && cloudSubmissions.length > 0) {
-        const localSubs = this.getSubmissions();
-        const mergedSubs = [...cloudSubmissions];
+        const cleanCloudSubs = cloudSubmissions.filter(
+          (s) => !SAMPLE_SUBMISSION_IDS.has(s.id) && !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId)
+        );
+        for (const s of cloudSubmissions) {
+          if (SAMPLE_SUBMISSION_IDS.has(s.id) || SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId)) {
+            supabaseService.deleteSubmission(s.id).catch(() => {});
+          }
+        }
+
+        const localSubs = this.getSubmissions().filter(
+          (s) => !SAMPLE_SUBMISSION_IDS.has(s.id) && !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId)
+        );
+        const mergedSubs = [...cleanCloudSubs];
         for (const ls of localSubs) {
           if (!mergedSubs.some((cs) => cs.id === ls.id)) {
             mergedSubs.push(ls);

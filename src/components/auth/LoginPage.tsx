@@ -20,7 +20,6 @@ import {
   Building2,
   HelpCircle,
   Sparkle,
-  Trash2,
 } from 'lucide-react';
 
 export interface PasswordStrengthResult {
@@ -109,7 +108,7 @@ export function evaluatePasswordStrength(password: string): PasswordStrengthResu
 }
 
 export const LoginPage: React.FC = () => {
-  const { login, registerStudent, users, deleteStudent } = useAuth();
+  const { login, registerStudent, users } = useAuth();
 
   // Mode: 'login' or 'register'
   const [mode, setMode] = useState<'login' | 'register'>('login');
@@ -668,43 +667,15 @@ export const LoginPage: React.FC = () => {
                         </div>
                       </div>
 
-                      {/* Real-time Inline Duplicate Roll Number Notification with One-Click Release */}
+                      {/* Real-time Inline Duplicate Roll Number Notification */}
                       {duplicateStudent ? (
-                        <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex flex-col gap-2.5 animate-in fade-in">
-                          <div className="flex items-start gap-2.5">
-                            <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="font-bold text-white">Roll #{rollNumber} is already taken in this class!</p>
-                              <p className="text-[11px] text-rose-200/80 mt-0.5 leading-snug">
-                                Already registered to student <strong>{duplicateStudent.name}</strong> in Semester {semester} ({section}). Each student in this class must use a unique roll number.
-                              </p>
-                            </div>
-                          </div>
-
-                          <div className="pt-2 border-t border-rose-500/30 flex items-center justify-between gap-2">
-                            <span className="text-[10px] text-rose-300/80">Need this roll number?</span>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                if (
-                                  window.confirm(
-                                    `Are you sure you want to release Roll #${rollNumber} (${duplicateStudent.name}) from Semester ${semester} (${section})?`
-                                  )
-                                ) {
-                                  await deleteStudent(duplicateStudent.id, {
-                                    loginId: duplicateStudent.loginId,
-                                    semester: duplicateStudent.semester,
-                                    section: duplicateStudent.section,
-                                    rollNumber: duplicateStudent.rollNumber,
-                                  });
-                                }
-                              }}
-                              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-900/90 hover:bg-rose-800 text-white text-[11px] font-bold border border-rose-600/60 transition shadow-xs"
-                              title="Purge previous record and free this roll number immediately"
-                            >
-                              <Trash2 className="w-3 h-3 text-rose-300" />
-                              <span>Release / Free Roll #{rollNumber}</span>
-                            </button>
+                        <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-500/50 text-rose-200 text-xs flex items-start gap-2.5 animate-in fade-in">
+                          <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <p className="font-bold text-white">Roll #{rollNumber} is already taken in this class!</p>
+                            <p className="text-[11px] text-rose-200/80 mt-0.5 leading-snug">
+                              Already registered to student <strong>{duplicateStudent.name}</strong> in Semester {semester} ({section}). Each student in this class must use a unique roll number. If you are the rightful owner of this roll number, please contact your Class Teacher or College Administrator.
+                            </p>
                           </div>
                         </div>
                       ) : (
