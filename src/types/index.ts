@@ -102,6 +102,8 @@ export interface IntegrityReport {
   aiLikelihoodScore: number; // 0 to 100
   aiReasoning: string;
   telemetry: SubmissionTelemetry;
+  evaluationReport?: any; // Cached EvaluationResult from /api/evaluate-submission
+  plagiarismScanResult?: any; // Cached PlagiarismScanResult from plagiarismEngine
 }
 
 export interface UploadedFile {

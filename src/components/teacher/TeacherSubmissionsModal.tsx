@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
+import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
 import { Assignment, Submission, Section, UploadedFile } from '@/types';
 import { computePeerPlagiarism, PlagiarismScanResult } from '@/lib/plagiarismEngine';
@@ -42,7 +43,9 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   onClose,
 }) => {
   const { users } = useAuth();
+  const { showSuccess, showError } = useToast();
   const [selectedSection, setSelectedSection] = useState<'All' | Section>('All');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [gradingScore, setGradingScore] = useState<number | string>('');
   const [gradingFeedback, setGradingFeedback] = useState<string>('');
@@ -77,6 +80,17 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       ? allSubmissions
       : allSubmissions.filter((s) => s.studentSection === selectedSection);
 
+  // Filter submissions by live search query (name or roll number)
+  const displayedSubmissions = filteredSubmissions.filter((sub) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase().trim();
+    return (
+      sub.studentName.toLowerCase().includes(q) ||
+      String(sub.studentRollNumber).includes(q) ||
+      sub.studentSection.toLowerCase().includes(q)
+    );
+  });
+
   // Filter all students registered for this semester & section
   const sectionStudents = users.filter((u) => {
     if (u.role !== 'student' || u.semester !== assignment.semester) return false;
@@ -87,6 +101,81 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   // Calculate missing roll numbers
   const submittedRolls = new Set(filteredSubmissions.map((s) => s.studentRollNumber));
   const missingStudents = sectionStudents.filter((s) => !submittedRolls.has(s.rollNumber || 0));
+
+  // Export official marks award list CSV formatted for College Examination Gazettes
+  const handleExportAwardListCsv = () => {
+    const targetStudents = [...sectionStudents].sort((a, b) => (a.rollNumber || 0) - (b.rollNumber || 0));
+
+    if (targetStudents.length === 0) {
+      showError('No Students Found', 'No registered students found for this class section.');
+      return;
+    }
+
+    const headers = [
+      'Sr #',
+      'Roll Number',
+      'Student Name',
+      'Father Name',
+      'Semester',
+      'Section',
+      'Total Marks',
+      'Marks Obtained',
+      'Status',
+      'Plagiarism %',
+      'Submission Date',
+      'Instructor Remarks',
+    ];
+
+    const rows = targetStudents.map((stud, idx) => {
+      const sub = allSubmissions.find((s) => s.studentId === stud.id);
+      const isGraded = sub && sub.status === 'graded';
+      const score = isGraded && sub.score !== undefined ? sub.score : sub ? 'Awaiting Grade' : '0';
+      const statusText = sub
+        ? isGraded
+          ? 'Graded'
+          : 'Submitted'
+        : 'ABSENT / NOT SUBMITTED';
+      const plagScore =
+        sub?.integrityReport?.peerPlagiarismScore !== undefined
+          ? `${sub.integrityReport.peerPlagiarismScore}%`
+          : 'N/A';
+      const subDate = sub?.submittedAt ? new Date(sub.submittedAt).toLocaleString() : 'N/A';
+      const remarks = sub?.teacherFeedback ? `"${sub.teacherFeedback.replace(/"/g, '""')}"` : '""';
+
+      return [
+        idx + 1,
+        stud.rollNumber || 'N/A',
+        `"${stud.name.replace(/"/g, '""')}"`,
+        `"${(stud.fatherName || '').replace(/"/g, '""')}"`,
+        stud.semester || assignment.semester,
+        stud.section || selectedSection,
+        assignment.totalMarks,
+        score,
+        statusText,
+        plagScore,
+        `"${subDate}"`,
+        remarks,
+      ].join(',');
+    });
+
+    const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const cleanSubject = assignment.subjectCode.replace(/[^a-zA-Z0-9]/g, '');
+    const cleanDate = new Date().toISOString().split('T')[0];
+    link.download = `GGCP_Award_List_${cleanSubject}_Sem${assignment.semester}_Sec${selectedSection}_${cleanDate}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showSuccess(
+      'Award List Exported',
+      `Exported official college marks award list for ${targetStudents.length} students.`
+    );
+  };
 
   const handleOpenGrading = (sub: Submission) => {
     const idx = filteredSubmissions.findIndex((s) => s.id === sub.id);
@@ -318,8 +407,8 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
         {/* Section Filter & Stats Strip */}
         <div className="bg-slate-50 border-b border-slate-200 p-4 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
-          <div className="flex items-center space-x-2">
-            <span className="text-xs font-bold text-slate-600">Filter Section:</span>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold text-slate-600">Section:</span>
             {(['All', 'A1', 'A2', 'B'] as ('All' | Section)[]).map((sec) => (
               <button
                 key={sec}
@@ -333,16 +422,49 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 {sec === 'All' ? 'All Sections' : `Section ${sec}`}
               </button>
             ))}
+
+            {/* Live Search Input */}
+            <div className="relative ml-2">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search name or roll #..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-8 pr-7 py-1 rounded-xl text-xs border border-slate-200 bg-white text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-purple-600 font-medium w-44 sm:w-52"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center space-x-3 text-xs font-semibold">
+          <div className="flex flex-wrap items-center gap-2.5 text-xs font-semibold">
             <span className="text-slate-700">
               Submitted: <strong className="text-emerald-700">{filteredSubmissions.length}</strong>
             </span>
             <span className="text-slate-700">
-              Missing (Not Submitted):{' '}
+              Missing:{' '}
               <strong className="text-rose-600">{missingStudents.length}</strong>
             </span>
+
+            {/* Export Official Award List (CSV) */}
+            <button
+              type="button"
+              onClick={handleExportAwardListCsv}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold transition shadow-2xs"
+              title="Download official College Examination Gazette / Marks Award List (.csv) for all students"
+            >
+              <Download className="w-3.5 h-3.5 text-emerald-700" />
+              <span>Export Award List (CSV)</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setShowAiSettings(!showAiSettings)}
@@ -353,7 +475,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               }`}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              {geminiApiKey ? 'Gemini AI Active' : 'AI Engine Settings'}
+              {geminiApiKey ? 'Gemini AI Active' : 'AI Engine'}
             </button>
 
             <button
@@ -363,11 +485,11 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 setWorkspaceStartIndex(0);
                 setWorkspaceOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3.5 py-1 rounded-xl bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-black shadow-sm disabled:opacity-40 transition"
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-black shadow-sm disabled:opacity-40 transition"
               title="Launch classroom map and mark students one by one with live telemetry console"
             >
               <Play className="w-3.5 h-3.5 fill-white" />
-              Sequential Marking Workspace
+              Sequential Grading Theater
             </button>
           </div>
         </div>
@@ -424,16 +546,20 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
           <div className="lg:col-span-2 p-6 space-y-4">
             <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
               <FileCode className="w-4 h-4 text-purple-700" />
-              Student Submissions ({filteredSubmissions.length})
+              Student Submissions ({searchQuery.trim() ? `${displayedSubmissions.length} of ${filteredSubmissions.length}` : filteredSubmissions.length})
             </h3>
 
             {filteredSubmissions.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-500">
                 No submissions recorded yet for Section {selectedSection}.
               </div>
+            ) : displayedSubmissions.length === 0 ? (
+              <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-500">
+                No submissions found matching &ldquo;{searchQuery}&rdquo;.
+              </div>
             ) : (
               <div className="space-y-3">
-                {filteredSubmissions.map((sub) => {
+                {displayedSubmissions.map((sub) => {
                   const plag = sub.integrityReport?.peerPlagiarismScore || 0;
                   const aiLikelihood = sub.integrityReport?.aiLikelihoodScore || 0;
                   const isBurst = sub.integrityReport?.telemetry?.suspiciousBurstDetected;

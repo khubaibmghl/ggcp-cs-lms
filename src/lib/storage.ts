@@ -14,11 +14,23 @@ const STORAGE_KEYS = {
   ASSIGNMENTS: 'college_lms_assignments',
   SUBMISSIONS: 'college_lms_submissions',
   ACTIVE_USER_ID: 'college_lms_active_user_id',
+  SYNC_QUEUE: 'college_lms_sync_queue',
+  CURRICULUM_VERSION: 'college_lms_curriculum_version',
 };
 
-// Safe localStorage wrapper for SSR
+export interface SyncQueueItem {
+  id: string;
+  entity: 'user' | 'subject' | 'assignment' | 'submission';
+  action: 'upsert' | 'delete';
+  payload: any;
+  timestamp: number;
+  retryCount: number;
+}
+
+// Safe localStorage wrapper with Non-Destructive Migrations & Resilient Sync Queue
 class LocalDataStore {
   private isClient = typeof window !== 'undefined';
+  private isProcessingQueue = false;
 
   private get<T>(key: string, fallback: T): T {
     if (!this.isClient) return fallback;
@@ -40,19 +52,161 @@ class LocalDataStore {
     }
   }
 
+  // --- RESILIENT SYNC QUEUE WITH RETRY LOGIC ---
+  private getSyncQueue(): SyncQueueItem[] {
+    return this.get<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE, []);
+  }
+
+  private saveSyncQueue(queue: SyncQueueItem[]): void {
+    this.set(STORAGE_KEYS.SYNC_QUEUE, queue);
+  }
+
+  private enqueueSync(
+    entity: SyncQueueItem['entity'],
+    action: SyncQueueItem['action'],
+    payload: any
+  ): void {
+    if (!this.isClient || !isSupabaseConfigured) return;
+
+    const queue = this.getSyncQueue();
+    const entityId = payload?.id || String(payload);
+
+    // Replace existing queued action for the same entity item to avoid redundant writes
+    const filtered = queue.filter((item) => !(item.entity === entity && item.id === entityId));
+
+    filtered.push({
+      id: entityId,
+      entity,
+      action,
+      payload,
+      timestamp: Date.now(),
+      retryCount: 0,
+    });
+
+    this.saveSyncQueue(filtered);
+    this.processSyncQueue();
+  }
+
+  async processSyncQueue(): Promise<void> {
+    if (!this.isClient || !isSupabaseConfigured || this.isProcessingQueue) return;
+    if (typeof navigator !== 'undefined' && !navigator.onLine) return;
+
+    const queue = this.getSyncQueue();
+    if (queue.length === 0) return;
+
+    this.isProcessingQueue = true;
+    const remainingQueue: SyncQueueItem[] = [];
+
+    for (const item of queue) {
+      let success = false;
+
+      try {
+        if (item.entity === 'user') {
+          if (item.action === 'upsert') {
+            success = await supabaseService.upsertUser(item.payload);
+          } else if (item.action === 'delete') {
+            success = await supabaseService.deleteUser(item.id);
+          }
+        } else if (item.entity === 'subject') {
+          if (item.action === 'upsert') {
+            success = await supabaseService.upsertSubject(item.payload);
+          } else if (item.action === 'delete') {
+            success = await supabaseService.deleteSubject(item.id);
+          }
+        } else if (item.entity === 'assignment') {
+          if (item.action === 'upsert') {
+            success = await supabaseService.upsertAssignment(item.payload);
+          } else if (item.action === 'delete') {
+            success = await supabaseService.deleteAssignment(item.id);
+          }
+        } else if (item.entity === 'submission') {
+          if (item.action === 'upsert') {
+            success = await supabaseService.upsertSubmission(item.payload);
+          } else if (item.action === 'delete') {
+            success = await supabaseService.deleteSubmission(item.id);
+          }
+        }
+      } catch (err) {
+        success = false;
+        console.warn(`Sync failed for ${item.entity}:${item.id}:`, err);
+      }
+
+      if (!success) {
+        // Retry with backoff if attempts < 5
+        if (item.retryCount < 5) {
+          remainingQueue.push({
+            ...item,
+            retryCount: item.retryCount + 1,
+          });
+        } else {
+          console.error(`Giving up on sync queue item after 5 failed retries:`, item);
+        }
+      }
+    }
+
+    this.saveSyncQueue(remainingQueue);
+    this.isProcessingQueue = false;
+  }
+
+  getPendingSyncCount(): number {
+    return this.getSyncQueue().length;
+  }
+
+  // --- INITIALIZATION & SMART NON-DESTRUCTIVE CURRICULUM MERGE ---
   init(): void {
     if (!this.isClient) return;
 
-    // Version key to auto-update catalog when official workload allocation changes
-    const CURRICULUM_VERSION = 'v4_fall_official_odd_semesters';
-    const currentVersion = localStorage.getItem('college_lms_curriculum_version');
+    const CURRICULUM_VERSION = 'v5_fall_official_odd_semesters';
+    const currentVersion = localStorage.getItem(STORAGE_KEYS.CURRICULUM_VERSION);
 
     if (currentVersion !== CURRICULUM_VERSION) {
-      // Overwrite subjects, users and assignments with the official curriculum and workload allocation
-      this.set(STORAGE_KEYS.SUBJECTS, INITIAL_SUBJECTS);
-      this.set(STORAGE_KEYS.USERS, INITIAL_USERS);
-      this.set(STORAGE_KEYS.ASSIGNMENTS, INITIAL_ASSIGNMENTS);
-      localStorage.setItem('college_lms_curriculum_version', CURRICULUM_VERSION);
+      // 1. NON-DESTRUCTIVE USER PRESERVATION:
+      // Keep ALL student registrations and custom faculty members created by administrators!
+      const existingUsers = this.get<User[]>(STORAGE_KEYS.USERS, []);
+      const existingStudents = existingUsers.filter((u) => u.role === 'student');
+      const customTeachers = existingUsers.filter(
+        (u) => u.role === 'teacher' && !INITIAL_USERS.some((iu) => iu.id === u.id)
+      );
+
+      const mergedUsers: User[] = [...INITIAL_USERS];
+
+      // Re-insert all student registrations
+      existingStudents.forEach((stud) => {
+        if (!mergedUsers.some((u) => u.id === stud.id || (u.loginId && stud.loginId && u.loginId.toLowerCase() === stud.loginId.toLowerCase()))) {
+          mergedUsers.push(stud);
+        }
+      });
+
+      // Re-insert all custom faculty
+      customTeachers.forEach((teach) => {
+        if (!mergedUsers.some((u) => u.id === teach.id || (u.phone && teach.phone && u.phone === teach.phone))) {
+          mergedUsers.push(teach);
+        }
+      });
+
+      this.set(STORAGE_KEYS.USERS, mergedUsers);
+
+      // 2. NON-DESTRUCTIVE SUBJECTS MERGE:
+      const existingSubjects = this.get<Subject[]>(STORAGE_KEYS.SUBJECTS, []);
+      const customSubjects = existingSubjects.filter(
+        (s) => !INITIAL_SUBJECTS.some((is) => is.id === s.id || is.code === s.code)
+      );
+      this.set(STORAGE_KEYS.SUBJECTS, [...INITIAL_SUBJECTS, ...customSubjects]);
+
+      // 3. NON-DESTRUCTIVE ASSIGNMENTS MERGE:
+      const existingAssignments = this.get<Assignment[]>(STORAGE_KEYS.ASSIGNMENTS, []);
+      const teacherCreatedAssignments = existingAssignments.filter(
+        (a) => !INITIAL_ASSIGNMENTS.some((ia) => ia.id === a.id)
+      );
+      this.set(STORAGE_KEYS.ASSIGNMENTS, [...INITIAL_ASSIGNMENTS, ...teacherCreatedAssignments]);
+
+      // 4. SUBMISSIONS PRESERVATION:
+      // Submissions are strictly preserved and never wiped!
+      if (!localStorage.getItem(STORAGE_KEYS.SUBMISSIONS)) {
+        this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
+      }
+
+      localStorage.setItem(STORAGE_KEYS.CURRICULUM_VERSION, CURRICULUM_VERSION);
     } else {
       if (!localStorage.getItem(STORAGE_KEYS.USERS)) {
         this.set(STORAGE_KEYS.USERS, INITIAL_USERS);
@@ -68,12 +222,19 @@ class LocalDataStore {
       }
     }
 
+    // Auto-process pending sync items on reconnection
+    window.addEventListener('online', () => {
+      this.processSyncQueue();
+    });
+
     // Cloud Synchronization (Supabase PostgreSQL)
     if (isSupabaseConfigured) {
       this.syncWithSupabase();
+      this.processSyncQueue();
     }
   }
 
+  // --- TWO-WAY RESILIENT CLOUD SYNCHRONIZATION ---
   async syncWithSupabase(): Promise<void> {
     try {
       const [cloudUsers, cloudSubjects, cloudAssignments, cloudSubmissions] = await Promise.all([
@@ -83,33 +244,78 @@ class LocalDataStore {
         supabaseService.fetchSubmissions(),
       ]);
 
+      // Users: Reconcile and merge
       if (cloudUsers && cloudUsers.length > 0) {
-        this.set(STORAGE_KEYS.USERS, cloudUsers);
+        const localUsers = this.getUsers();
+        const merged = [...cloudUsers];
+
+        // Ensure locally registered students not yet in cloud are preserved and queued
+        for (const lu of localUsers) {
+          const inCloud = merged.some(
+            (cu) =>
+              cu.id === lu.id ||
+              (cu.loginId && lu.loginId && cu.loginId.toLowerCase() === lu.loginId.toLowerCase())
+          );
+          if (!inCloud) {
+            merged.push(lu);
+            this.enqueueSync('user', 'upsert', lu);
+          }
+        }
+        this.set(STORAGE_KEYS.USERS, merged);
       } else if (isSupabaseConfigured) {
-        // Seed cloud DB with initial users
+        // Seed cloud DB with existing local users
         const localUsers = this.getUsers();
         for (const u of localUsers) {
-          await supabaseService.upsertUser(u);
+          this.enqueueSync('user', 'upsert', u);
         }
       }
 
+      // Subjects: Reconcile and merge
       if (cloudSubjects && cloudSubjects.length > 0) {
-        this.set(STORAGE_KEYS.SUBJECTS, cloudSubjects);
+        const localSubs = this.getSubjects();
+        const mergedSubs = [...cloudSubjects];
+        for (const ls of localSubs) {
+          if (!mergedSubs.some((cs) => cs.id === ls.id || cs.code === ls.code)) {
+            mergedSubs.push(ls);
+            this.enqueueSync('subject', 'upsert', ls);
+          }
+        }
+        this.set(STORAGE_KEYS.SUBJECTS, mergedSubs);
       } else if (isSupabaseConfigured) {
-        // Seed cloud DB with initial subjects
         const localSubs = this.getSubjects();
         for (const s of localSubs) {
-          await supabaseService.upsertSubject(s);
+          this.enqueueSync('subject', 'upsert', s);
         }
       }
 
+      // Assignments: Reconcile and merge
       if (cloudAssignments && cloudAssignments.length > 0) {
-        this.set(STORAGE_KEYS.ASSIGNMENTS, cloudAssignments);
+        const localAsgs = this.getAssignments();
+        const mergedAsgs = [...cloudAssignments];
+        for (const la of localAsgs) {
+          if (!mergedAsgs.some((ca) => ca.id === la.id)) {
+            mergedAsgs.push(la);
+            this.enqueueSync('assignment', 'upsert', la);
+          }
+        }
+        this.set(STORAGE_KEYS.ASSIGNMENTS, mergedAsgs);
       }
 
+      // Submissions: Reconcile and merge
       if (cloudSubmissions && cloudSubmissions.length > 0) {
-        this.set(STORAGE_KEYS.SUBMISSIONS, cloudSubmissions);
+        const localSubs = this.getSubmissions();
+        const mergedSubs = [...cloudSubmissions];
+        for (const ls of localSubs) {
+          if (!mergedSubs.some((cs) => cs.id === ls.id)) {
+            mergedSubs.push(ls);
+            this.enqueueSync('submission', 'upsert', ls);
+          }
+        }
+        this.set(STORAGE_KEYS.SUBMISSIONS, mergedSubs);
       }
+
+      // Process any enqueued synchronization tasks
+      this.processSyncQueue();
     } catch (err) {
       console.warn('Supabase background sync notification:', err);
     }
@@ -128,21 +334,25 @@ class LocalDataStore {
     const users = this.getUsers();
     users.push(user);
     this.saveUsers(users);
-    if (isSupabaseConfigured) {
-      supabaseService.upsertUser(user).catch(console.error);
-    }
+    this.enqueueSync('user', 'upsert', user);
   }
 
   updateUser(id: string, updates: Partial<User>): void {
     const users = this.getUsers().map((u) => (u.id === id ? { ...u, ...updates } : u));
     this.saveUsers(users);
-    if (isSupabaseConfigured) {
-      const updated = users.find((u) => u.id === id);
-      if (updated) supabaseService.upsertUser(updated).catch(console.error);
+    const updated = users.find((u) => u.id === id);
+    if (updated) {
+      this.enqueueSync('user', 'upsert', updated);
     }
   }
 
-  // Active User session (null means user is logged out and on the landing login page)
+  deleteUser(id: string): void {
+    const users = this.getUsers().filter((u) => u.id !== id);
+    this.saveUsers(users);
+    this.enqueueSync('user', 'delete', { id });
+  }
+
+  // Active User session
   getActiveUserId(): string | null {
     if (!this.isClient) return null;
     return localStorage.getItem(STORAGE_KEYS.ACTIVE_USER_ID);
@@ -158,8 +368,6 @@ class LocalDataStore {
     window.dispatchEvent(new Event('lms_storage_updated'));
   }
 
-  // Unique Official Student Login ID: BCS{Semester}-{Section}-{Roll}
-  // e.g., Semester 3, Section A1, Roll 1 -> BCS3-A1-001
   generateStudentLoginId(semester: number, section: string, rollNumber: number): string {
     const padded = String(rollNumber).padStart(3, '0');
     return `BCS${semester}-${section}-${padded}`;
@@ -178,17 +386,22 @@ class LocalDataStore {
     const subjects = this.getSubjects();
     subjects.push(subject);
     this.saveSubjects(subjects);
-    if (isSupabaseConfigured) {
-      supabaseService.upsertSubject(subject).catch(console.error);
+    this.enqueueSync('subject', 'upsert', subject);
+  }
+
+  updateSubject(id: string, updates: Partial<Subject>): void {
+    const subjects = this.getSubjects().map((s) => (s.id === id ? { ...s, ...updates } : s));
+    this.saveSubjects(subjects);
+    const updated = subjects.find((s) => s.id === id);
+    if (updated) {
+      this.enqueueSync('subject', 'upsert', updated);
     }
   }
 
   deleteSubject(id: string): void {
     const subjects = this.getSubjects().filter((s) => s.id !== id);
     this.saveSubjects(subjects);
-    if (isSupabaseConfigured) {
-      supabaseService.deleteSubject(id).catch(console.error);
-    }
+    this.enqueueSync('subject', 'delete', { id });
   }
 
   // --- Assignments ---
@@ -204,9 +417,7 @@ class LocalDataStore {
     const assignments = this.getAssignments();
     assignments.unshift(assignment); // latest first
     this.saveAssignments(assignments);
-    if (isSupabaseConfigured) {
-      supabaseService.upsertAssignment(assignment).catch(console.error);
-    }
+    this.enqueueSync('assignment', 'upsert', assignment);
   }
 
   deleteAssignment(id: string): void {
@@ -214,6 +425,11 @@ class LocalDataStore {
     this.saveAssignments(assignments);
     const submissions = this.getSubmissions().filter((s) => s.assignmentId !== id);
     this.saveSubmissions(submissions);
+
+    this.enqueueSync('assignment', 'delete', { id });
+    for (const sub of submissions) {
+      this.enqueueSync('submission', 'delete', { id: sub.id });
+    }
   }
 
   // --- Submissions ---
@@ -231,23 +447,22 @@ class LocalDataStore {
       (s) => s.assignmentId === submission.assignmentId && s.studentId === submission.studentId
     );
     if (idx >= 0) {
-      submissions[idx] = submission; // overwrite prior submission (allowed before deadline)
+      submissions[idx] = submission;
     } else {
       submissions.push(submission);
     }
     this.saveSubmissions(submissions);
-    if (isSupabaseConfigured) {
-      supabaseService.upsertSubmission(submission).catch(console.error);
-    }
+    this.enqueueSync('submission', 'upsert', submission);
   }
 
-  // Reset all to fresh defaults
+  // Reset all to fresh defaults (Explicit Admin Action)
   resetToDefaults(): void {
     if (!this.isClient) return;
     this.set(STORAGE_KEYS.USERS, INITIAL_USERS);
     this.set(STORAGE_KEYS.SUBJECTS, INITIAL_SUBJECTS);
     this.set(STORAGE_KEYS.ASSIGNMENTS, INITIAL_ASSIGNMENTS);
     this.set(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
+    this.saveSyncQueue([]);
     this.setActiveUserId(null);
   }
 }

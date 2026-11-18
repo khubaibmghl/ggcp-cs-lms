@@ -25,6 +25,10 @@ import {
   FileText,
   Download,
   Trash2,
+  Copy,
+  Check,
+  Search,
+  Filter,
 } from 'lucide-react';
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
 
@@ -34,16 +38,17 @@ interface TeacherDashboardProps {
 
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }) => {
   const { currentUser, users } = useAuth();
-  const { showSuccess, showError } = useToast();
+  const { showSuccess, showError, showInfo } = useToast();
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [showWizard, setShowWizard] = useState(false);
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [activeAssignmentForReview, setActiveAssignmentForReview] = useState<Assignment | null>(null);
   const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
+  const [copiedAsgId, setCopiedAsgId] = useState<string | null>(null);
 
-  // --- Wizard Form State (4 Steps) ---
-  const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4>(1);
+  // --- Wizard Form State (3 Steps) ---
+  const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
 
   // Step 1: Course & Semester
   const [targetSemester, setTargetSemester] = useState<SemesterNumber>(currentUser?.taughtSemester || 3);
@@ -84,18 +89,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
     reader.readAsDataURL(file);
   };
 
-  // Step 3: Grading & Test Cases
-  const [gradingMode, setGradingMode] = useState<GradingMode>('hybrid');
-  const [testCases, setTestCases] = useState<TestCase[]>([
-    { id: 'tc-1', input: 'Input sample 1', expectedOutput: 'Expected output 1', points: 5 },
-    { id: 'tc-2', input: 'Input sample 2', expectedOutput: 'Expected output 2', points: 5 },
-  ]);
-  const [aiRubric, setAiRubric] = useState<RubricCriterion[]>([
-    { id: 'rub-1', title: 'Logic & Algorithmic Correctness', weight: 50, description: 'Correct logic and handling edge cases' },
-    { id: 'rub-2', title: 'Code Quality & Complexity', weight: 50, description: 'Efficient time/space complexity and clear structure' },
-  ]);
-
-  // Step 4: Deadline (Midnight expiry)
+  // Step 3: Deadline (Midnight expiry)
   const defaultFutureDate = new Date();
   defaultFutureDate.setDate(defaultFutureDate.getDate() + 7);
   const [deadlineDate, setDeadlineDate] = useState(defaultFutureDate.toISOString().split('T')[0]);
@@ -155,19 +149,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
     }
   };
 
-  // Add Test Case in Wizard
-  const handleAddTestCase = () => {
-    setTestCases([
-      ...testCases,
-      {
-        id: `tc-${Date.now()}`,
-        input: '',
-        expectedOutput: '',
-        points: 5,
-      },
-    ]);
-  };
-
   // Complete Wizard & Publish
   const handlePublishAssignment = () => {
     if (!title.trim()) {
@@ -220,190 +201,487 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
       myAssignedSubjectIds.includes(a.subjectId)
   );
 
-  return (
-    <div className="space-y-6">
-      {/* Teacher Header Banner */}
-      <div className="bg-gradient-to-r from-purple-800 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-200 text-xs font-semibold mb-2">
-              <Award className="w-4 h-4 text-purple-300" />
-              Faculty Portal • {currentUser?.assignedCourses && currentUser.assignedCourses.length > 0
-                ? currentUser.assignedCourses.map((c) => `${c.subjectCode} (${c.sections.join(', ')})`).join(' • ')
-                : currentUser?.taughtSubjectName || 'BS Computer Science'}
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
-              Course Assignments & Evaluation Hub
-            </h1>
-            <p className="text-sm text-purple-200/80 mt-1">
-              Create assignments with instant publishing, automated test-case evaluation, peer plagiarism checks, and missing roll tracking.
-            </p>
-          </div>
+  // Copy missing roll numbers for an assignment
+  const handleCopyMissingRolls = (asg: Assignment, missingRolls: number[]) => {
+    if (missingRolls.length === 0) return;
+    const text = `Missing Assignment Submissions for [${asg.subjectCode}] ${asg.title}:\nRoll Numbers: ${missingRolls.join(', ')}`;
+    navigator.clipboard.writeText(text);
+    setCopiedAsgId(asg.id);
+    showInfo('Copied to Clipboard', `${missingRolls.length} missing roll numbers copied.`);
+    setTimeout(() => setCopiedAsgId(null), 2500);
+  };
 
-          <button
-            onClick={() => {
-              setWizardStep(1);
-              setShowWizard(true);
-            }}
-            className="inline-flex items-center gap-2 px-5 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-2xl text-xs font-extrabold transition shadow-lg shadow-purple-950/40 hover:scale-[1.02]"
-          >
-            <PlusCircle className="w-4 h-4" />
-            Create Assignment Wizard
-          </button>
-        </div>
-
-        {/* Quick Teacher Metrics */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
-            <span className="text-xs text-purple-200 font-medium">Published Assignments</span>
-            <p className="text-2xl font-black mt-2">{myAssignments.length}</p>
-            <span className="text-[11px] text-purple-300/80">Active & Closed</span>
-          </div>
-
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
-            <span className="text-xs text-purple-200 font-medium">Total Submissions</span>
-            <p className="text-2xl font-black mt-2">{submissions.length}</p>
-            <span className="text-[11px] text-purple-300/80">Received across sections</span>
-          </div>
-
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
-            <span className="text-xs text-purple-200 font-medium">Plagiarism Alerts</span>
-            <p className="text-2xl font-black mt-2 text-rose-300">
-              {submissions.filter((s) => s.integrityReport?.peerPlagiarismScore > 50).length}
-            </p>
-            <span className="text-[11px] text-rose-200/80">&gt;50% peer match</span>
-          </div>
-
-          <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
-            <span className="text-xs text-purple-200 font-medium">Midnight Expiry Rules</span>
-            <p className="text-2xl font-black mt-2 text-emerald-300">Active</p>
-            <span className="text-[11px] text-purple-300/80">Automated lock enabled</span>
-          </div>
-        </div>
+  // =========================================================================
+  // VIEW: TAB === 'submissions' (REVIEW & GRADING OVERVIEW)
+  // =========================================================================
+  const renderSubmissionsTab = () => (
+    <div className="space-y-6 animate-in fade-in duration-150">
+      <div className="bg-gradient-to-r from-purple-800 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-xl">
+        <h1 className="text-2xl font-extrabold tracking-tight">Review & Grading Console</h1>
+        <p className="text-xs text-purple-200 mt-1">
+          Select any course assignment below to inspect student documents, run authentic evaluations, and record grades.
+        </p>
       </div>
 
-      {/* ASSIGNMENTS LIST */}
-      <section className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">
-              Assignments Portfolio ({myAssignments.length})
-            </h2>
-            <p className="text-xs text-slate-500">
-              Select an assignment to view submissions, evaluate test cases, inspect plagiarism, or track missing roll numbers.
-            </p>
-          </div>
+      <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-slate-900">Assignments Awaiting Evaluation</h2>
+          <span className="text-xs text-slate-400 font-mono">{myAssignments.length} Assignments</span>
         </div>
 
-        <div className="space-y-3">
-          {myAssignments.map((asg) => {
-            const asgSubmissions = submissions.filter((s) => s.assignmentId === asg.id);
-            const isExpired = new Date(`${asg.deadlineDate}T23:59:59`) < new Date();
-            const highPlagiarismCount = asgSubmissions.filter((s) => s.integrityReport?.peerPlagiarismScore > 50).length;
+        {myAssignments.length === 0 ? (
+          <div className="p-12 text-center text-slate-400 text-xs">No assignments created yet.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
+                <tr>
+                  <th className="py-3 px-4">Subject</th>
+                  <th className="py-3 px-4">Assignment</th>
+                  <th className="py-3 px-4">Sections</th>
+                  <th className="py-3 px-4 text-center">Submissions</th>
+                  <th className="py-3 px-4 text-center">Graded</th>
+                  <th className="py-3 px-4 text-center">Pending</th>
+                  <th className="py-3 px-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                {myAssignments.map((asg) => {
+                  const asgSubs = submissions.filter((s) => s.assignmentId === asg.id);
+                  const gradedCount = asgSubs.filter((s) => s.status === 'graded').length;
+                  const pendingCount = asgSubs.length - gradedCount;
 
-            return (
-              <div
-                key={asg.id}
-                className="bg-slate-50 hover:bg-purple-50/20 border border-slate-200 hover:border-purple-300 rounded-2xl p-5 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
-              >
-                <div className="space-y-1.5 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
+                  return (
+                    <tr key={asg.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-4 px-4 font-mono font-bold text-purple-900">
+                        {asg.subjectCode}
+                      </td>
+                      <td className="py-4 px-4">
+                        <p className="font-bold text-slate-900">{asg.title}</p>
+                        <p className="text-[11px] text-slate-400">Total Marks: {asg.totalMarks}</p>
+                      </td>
+                      <td className="py-4 px-4 text-slate-600">
+                        {asg.targetSections.join(', ')}
+                      </td>
+                      <td className="py-4 px-4 text-center font-bold text-slate-900">
+                        {asgSubs.length}
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[11px]">
+                          {gradedCount}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        <span className={`px-2 py-0.5 rounded-full font-bold text-[11px] ${
+                          pendingCount > 0 ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-500'
+                        }`}>
+                          {pendingCount}
+                        </span>
+                      </td>
+                      <td className="py-4 px-4 text-center">
+                        <button
+                          onClick={() => setActiveAssignmentForReview(asg)}
+                          className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Grade Submissions</span>
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // =========================================================================
+  // VIEW: TAB === 'roster' (MISSING ROLL NUMBERS TRACKER)
+  // =========================================================================
+  const renderRosterTab = () => (
+    <div className="space-y-6 animate-in fade-in duration-150">
+      <div className="bg-gradient-to-r from-purple-800 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-xl">
+        <h1 className="text-2xl font-extrabold tracking-tight">Missing Submissions & Roster Tracker</h1>
+        <p className="text-xs text-purple-200 mt-1">
+          Identifies students who have not yet submitted assignments. Copy non-submitting roll numbers with one click.
+        </p>
+      </div>
+
+      <div className="space-y-4">
+        {myAssignments.map((asg) => {
+          const asgSubs = submissions.filter((s) => s.assignmentId === asg.id);
+          const submittedRolls = new Set(asgSubs.map((s) => s.studentRollNumber));
+
+          const enrolledStudents = users.filter((u) => {
+            if (u.role !== 'student' || u.semester !== asg.semester) return false;
+            if (asg.targetSections.includes('All')) return true;
+            if (u.section && asg.targetSections.includes(u.section)) return true;
+            return false;
+          });
+
+          const missingStudents = enrolledStudents.filter((s) => !submittedRolls.has(s.rollNumber || 0));
+          const missingRolls = missingStudents.map((s) => s.rollNumber || 0).filter((r) => r > 0);
+
+          return (
+            <div key={asg.id} className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                <div>
+                  <div className="flex items-center gap-2 mb-1">
                     <span className="font-mono text-xs font-bold bg-purple-100 text-purple-800 px-2.5 py-0.5 rounded-md">
                       {asg.subjectCode}
                     </span>
-                    <span className="text-xs font-semibold text-slate-700">
-                      BS CS Semester {asg.semester}
+                    <span className="text-xs font-semibold text-slate-500">
+                      Sem {asg.semester} ({asg.targetSections.join(', ')})
                     </span>
-                    <span className="text-xs px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700 font-semibold">
-                      Sections: {asg.targetSections.join(', ')}
-                    </span>
-                    {isExpired ? (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        Expired (Locked at Midnight)
-                      </span>
-                    ) : (
-                      <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Active Submissions Open
-                      </span>
-                    )}
                   </div>
-
                   <h3 className="font-extrabold text-slate-900 text-base">{asg.title}</h3>
-                  <p className="text-xs text-slate-500 line-clamp-1">{asg.description}</p>
-
-                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-1">
-                    <span>
-                      Total Marks: <strong className="text-slate-800">{asg.totalMarks}</strong>
-                    </span>
-                    <span>
-                      Deadline: <strong className="text-slate-800">{asg.deadlineDate} (11:59:59 PM)</strong>
-                    </span>
-
-                    {asg.resourceFileName && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (!asg.resourceFileContent) return;
-                          const a = document.createElement('a');
-                          a.href = asg.resourceFileContent;
-                          a.download = asg.resourceFileName || 'Assignment_Questions.pdf';
-                          document.body.appendChild(a);
-                          a.click();
-                          document.body.removeChild(a);
-                        }}
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 text-[11px] font-bold transition"
-                        title="Download Question Paper"
-                      >
-                        <FileText className="w-3 h-3 text-purple-600" />
-                        <span className="truncate max-w-[140px]">{asg.resourceFileName}</span>
-                        <Download className="w-3 h-3" />
-                      </button>
-                    )}
-                    <span>
-                      Mode: <strong className="capitalize text-purple-700">{asg.gradingMode}</strong>
-                    </span>
-                  </div>
                 </div>
 
-                {/* Right Action Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-slate-500 font-medium">
+                    {asgSubs.length} of {enrolledStudents.length} Submitted
+                  </span>
                   <button
-                    onClick={() => setActiveAssignmentForReview(asg)}
-                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-sm transition"
+                    onClick={() => handleCopyMissingRolls(asg, missingRolls)}
+                    disabled={missingRolls.length === 0}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition disabled:opacity-50"
                   >
-                    <Eye className="w-4 h-4" />
-                    Review Submissions ({asgSubmissions.length})
+                    {copiedAsgId === asg.id ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedAsgId === asg.id ? 'Copied!' : 'Copy Missing Rolls'}</span>
                   </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAssignmentToDelete(asg)}
-                    className="p-2 rounded-xl bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-300 transition"
-                    title="Delete Assignment"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-
-                  {highPlagiarismCount > 0 && (
-                    <span className="px-2.5 py-1 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1">
-                      <ShieldAlert className="w-3.5 h-3.5" />
-                      {highPlagiarismCount} Plagiarism Alert
-                    </span>
-                  )}
                 </div>
               </div>
-            );
-          })}
-        </div>
-      </section>
 
-      {/* --- 4-STEP ASSIGNMENT CREATION WIZARD MODAL --- */}
+              {missingStudents.length === 0 ? (
+                <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>100% Submissions Received! Every student in this class has submitted their assignment.</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <span className="text-[11px] font-bold text-rose-700 uppercase tracking-wider block">
+                    Outstanding Students ({missingStudents.length} pending):
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    {missingStudents.map((stud) => (
+                      <span
+                        key={stud.id}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs font-semibold"
+                      >
+                        <span className="font-mono font-bold text-rose-700">Roll #{stud.rollNumber}</span>
+                        <span>{stud.name}</span>
+                        <span className="text-[10px] text-rose-400 font-mono">({stud.section})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
+  // =========================================================================
+  // VIEW: TAB === 'integrity' (PLAGIARISM & COLLUSION SUITE)
+  // =========================================================================
+  const renderIntegrityTab = () => {
+    const flaggedSubmissions = submissions.filter(
+      (s) =>
+        (s.integrityReport?.peerPlagiarismScore && s.integrityReport.peerPlagiarismScore > 30) ||
+        (s.integrityReport?.aiLikelihoodScore && s.integrityReport.aiLikelihoodScore > 50)
+    );
+
+    return (
+      <div className="space-y-6 animate-in fade-in duration-150">
+        <div className="bg-gradient-to-r from-purple-800 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-7 shadow-xl">
+          <h1 className="text-2xl font-extrabold tracking-tight">Plagiarism & Academic Integrity Suite</h1>
+          <p className="text-xs text-purple-200 mt-1">
+            Detects collusion, variable renaming, and cross-student copying using Stanford MOSS-grade AST tokenization.
+          </p>
+        </div>
+
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-900">Flagged Submissions Across Courses</h2>
+            <span className="text-xs font-bold text-rose-700 bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">
+              {flaggedSubmissions.length} Flagged
+            </span>
+          </div>
+
+          {flaggedSubmissions.length === 0 ? (
+            <div className="p-12 text-center space-y-2">
+              <CheckCircle2 className="w-10 h-10 text-emerald-500 mx-auto" />
+              <h3 className="text-sm font-bold text-slate-800">Clean Submissions</h3>
+              <p className="text-xs text-slate-500">No submissions currently exceed the 30% similarity collusion threshold.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 uppercase tracking-wider font-semibold border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4">Student</th>
+                    <th className="py-3 px-4">Assignment</th>
+                    <th className="py-3 px-4 text-center">Plagiarism Score</th>
+                    <th className="py-3 px-4">Collusion Match</th>
+                    <th className="py-3 px-4 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                  {flaggedSubmissions.map((sub) => {
+                    const asg = assignments.find((a) => a.id === sub.assignmentId);
+                    const report = sub.integrityReport;
+
+                    return (
+                      <tr key={sub.id} className="hover:bg-rose-50/20 transition-colors">
+                        <td className="py-4 px-4 font-bold text-slate-900">
+                          <p>{sub.studentName}</p>
+                          <span className="text-[11px] text-slate-500 font-mono">
+                            Roll #{sub.studentRollNumber} (Sec {sub.studentSection})
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <span className="font-mono text-purple-800 font-bold">[{asg?.subjectCode}]</span>{' '}
+                          <span>{asg?.title || 'Assignment'}</span>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 font-black text-xs">
+                            {report?.peerPlagiarismScore || 0}% Match
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-slate-600">
+                          {report?.matchedStudentName ? (
+                            <span>
+                              Matched with <strong>{report.matchedStudentName}</strong> (Roll #{report.matchedWithRollNumber})
+                            </span>
+                          ) : (
+                            <span className="italic text-slate-400">Classroom overlap</span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          {asg && (
+                            <button
+                              onClick={() => setActiveAssignmentForReview(asg)}
+                              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs shadow-xs transition"
+                            >
+                              Inspect Collusion
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // =========================================================================
+  // VIEW: TAB === 'assignments' (DEDICATED PORTFOLIO MANAGEMENT) OR 'dashboard'
+  // =========================================================================
+  return (
+    <div className="space-y-6">
+      {/* Route by currentTab */}
+      {currentTab === 'submissions' && renderSubmissionsTab()}
+      {currentTab === 'roster' && renderRosterTab()}
+      {currentTab === 'integrity' && renderIntegrityTab()}
+
+      {(currentTab === 'dashboard' || currentTab === 'assignments') && (
+        <>
+          {/* Teacher Header Banner */}
+          <div className="bg-gradient-to-r from-purple-800 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-8 shadow-xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/20 border border-purple-400/30 text-purple-200 text-xs font-semibold mb-2">
+                  <Award className="w-4 h-4 text-purple-300" />
+                  Faculty Portal • {currentUser?.assignedCourses && currentUser.assignedCourses.length > 0
+                    ? currentUser.assignedCourses.map((c) => `${c.subjectCode} (${c.sections.join(', ')})`).join(' • ')
+                    : currentUser?.taughtSubjectName || 'BS Computer Science'}
+                </div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+                  {currentTab === 'assignments' ? 'Course Assignments Management' : 'Course Assignments & Evaluation Hub'}
+                </h1>
+                <p className="text-sm text-purple-200/80 mt-1">
+                  Create assignments with instant publishing, automated test-case evaluation, peer plagiarism checks, and missing roll tracking.
+                </p>
+              </div>
+
+              <button
+                onClick={() => {
+                  setWizardStep(1);
+                  setShowWizard(true);
+                }}
+                className="inline-flex items-center gap-2 px-5 py-3 bg-purple-600 hover:bg-purple-500 text-white rounded-2xl text-xs font-extrabold transition shadow-lg shadow-purple-950/40 hover:scale-[1.02]"
+              >
+                <PlusCircle className="w-4 h-4" />
+                Create Assignment Wizard
+              </button>
+            </div>
+
+            {/* Quick Teacher Metrics */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-8">
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
+                <span className="text-xs text-purple-200 font-medium">Published Assignments</span>
+                <p className="text-2xl font-black mt-2">{myAssignments.length}</p>
+                <span className="text-[11px] text-purple-300/80">Active & Closed</span>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
+                <span className="text-xs text-purple-200 font-medium">Total Submissions</span>
+                <p className="text-2xl font-black mt-2">{submissions.length}</p>
+                <span className="text-[11px] text-purple-300/80">Received across sections</span>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
+                <span className="text-xs text-purple-200 font-medium">Plagiarism Alerts</span>
+                <p className="text-2xl font-black mt-2 text-rose-300">
+                  {submissions.filter((s) => (s.integrityReport?.peerPlagiarismScore || 0) > 50).length}
+                </p>
+                <span className="text-[11px] text-rose-200/80">&gt;50% peer match</span>
+              </div>
+
+              <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10">
+                <span className="text-xs text-purple-200 font-medium">Midnight Expiry Rules</span>
+                <p className="text-2xl font-black mt-2 text-emerald-300">Active</p>
+                <span className="text-[11px] text-purple-300/80">Automated lock enabled</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ASSIGNMENTS LIST */}
+          <section className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">
+                  Assignments Portfolio ({myAssignments.length})
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Select an assignment to view submissions, evaluate test cases, inspect plagiarism, or track missing roll numbers.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              {myAssignments.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-xs">No assignments posted yet. Click the button above to create one.</div>
+              ) : (
+                myAssignments.map((asg) => {
+                  const asgSubmissions = submissions.filter((s) => s.assignmentId === asg.id);
+                  const isExpired = new Date(`${asg.deadlineDate}T23:59:59`) < new Date();
+                  const highPlagiarismCount = asgSubmissions.filter(
+                    (s) => (s.integrityReport?.peerPlagiarismScore || 0) > 50
+                  ).length;
+
+                  return (
+                    <div
+                      key={asg.id}
+                      className="bg-slate-50 hover:bg-purple-50/20 border border-slate-200 hover:border-purple-300 rounded-2xl p-5 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4"
+                    >
+                      <div className="space-y-1.5 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-mono text-xs font-bold bg-purple-100 text-purple-800 px-2.5 py-0.5 rounded-md">
+                            {asg.subjectCode}
+                          </span>
+                          <span className="text-xs font-semibold text-slate-700">
+                            BS CS Semester {asg.semester}
+                          </span>
+                          <span className="text-xs px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-700 font-semibold">
+                            Sections: {asg.targetSections.join(', ')}
+                          </span>
+                          {isExpired ? (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              Expired (Locked at Midnight)
+                            </span>
+                          ) : (
+                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" />
+                              Active Submissions Open
+                            </span>
+                          )}
+                        </div>
+
+                        <h3 className="font-extrabold text-slate-900 text-base">{asg.title}</h3>
+                        <p className="text-xs text-slate-500 line-clamp-1">{asg.description}</p>
+
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 pt-1">
+                          <span>
+                            Total Marks: <strong className="text-slate-800">{asg.totalMarks}</strong>
+                          </span>
+                          <span>
+                            Deadline: <strong className="text-slate-800">{asg.deadlineDate} (11:59:59 PM)</strong>
+                          </span>
+
+                          {asg.resourceFileName && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!asg.resourceFileContent) return;
+                                const a = document.createElement('a');
+                                a.href = asg.resourceFileContent;
+                                a.download = asg.resourceFileName || 'Assignment_Questions.pdf';
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 text-[11px] font-bold transition"
+                              title="Download Question Paper"
+                            >
+                              <FileText className="w-3 h-3 text-purple-600" />
+                              <span className="truncate max-w-[140px]">{asg.resourceFileName}</span>
+                              <Download className="w-3 h-3" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Action Buttons */}
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          onClick={() => setActiveAssignmentForReview(asg)}
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-sm transition"
+                        >
+                          <Eye className="w-4 h-4" />
+                          Review Submissions ({asgSubmissions.length})
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => setAssignmentToDelete(asg)}
+                          className="p-2 rounded-xl bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 hover:border-rose-300 transition"
+                          title="Delete Assignment"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+
+                        {highPlagiarismCount > 0 && (
+                          <span className="px-2.5 py-1 rounded-xl bg-rose-100 text-rose-700 text-xs font-bold flex items-center gap-1">
+                            <ShieldAlert className="w-3.5 h-3.5" />
+                            {highPlagiarismCount} Plagiarism Alert
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </section>
+        </>
+      )}
+
+      {/* --- 3-STEP ASSIGNMENT CREATION WIZARD MODAL --- */}
       {showWizard && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 max-h-[90vh] overflow-y-auto">
-            {/* Wizard Header & Stepper */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
               <div>
                 <span className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">
@@ -423,7 +701,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
               </button>
             </div>
 
-            {/* Stepper Progress Bar */}
             <div className="grid grid-cols-3 gap-2 mb-6">
               {[1, 2, 3].map((step) => (
                 <div
@@ -435,7 +712,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
               ))}
             </div>
 
-            {/* Professional Inline Validation Message Box */}
             {wizardError && (
               <div className="p-3.5 mb-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center justify-between gap-2.5 animate-in fade-in">
                 <div className="flex items-center gap-2">
@@ -446,82 +722,31 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                   type="button"
                   onClick={() => setWizardError(null)}
                   className="text-rose-400 hover:text-rose-700 font-bold p-1"
-                  title="Dismiss message"
                 >
                   ✕
                 </button>
               </div>
             )}
 
-            {/* --- STEP 1: Course & Semester --- */}
             {wizardStep === 1 && (
               <div className="space-y-4">
-                {currentUser?.assignedCourses && currentUser.assignedCourses.length > 0 && (
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                      Select From Your Assigned Courses:
-                    </label>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
-                      {currentUser.assignedCourses.map((c) => {
-                        const isMatch = targetSubjectId === c.subjectId && targetSemester === c.semester;
-                        return (
-                          <button
-                            type="button"
-                            key={c.subjectId}
-                            onClick={() => {
-                              setTargetSubjectId(c.subjectId);
-                              setTargetSemester(c.semester);
-                              setTargetSections(c.sections.length === 3 ? ['All'] : c.sections);
-                            }}
-                            className={`p-3 rounded-2xl border text-left transition-all ${
-                              isMatch
-                                ? 'bg-purple-700 text-white border-purple-700 shadow-md'
-                                : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span
-                                className={`font-mono text-xs font-bold px-2 py-0.5 rounded ${
-                                  isMatch ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
-                                }`}
-                              >
-                                {c.subjectCode}
-                              </span>
-                              <span
-                                className={`text-[10px] font-bold ${
-                                  isMatch ? 'text-purple-200' : 'text-slate-500'
-                                }`}
-                              >
-                                Sem {c.semester}
-                              </span>
-                            </div>
-                            <p className="font-bold text-xs mt-1 truncate">{c.subjectName}</p>
-                            <p
-                              className={`text-[11px] mt-0.5 font-medium ${
-                                isMatch ? 'text-purple-200' : 'text-slate-500'
-                              }`}
-                            >
-                              Sections: {c.sections.join(', ')}
-                            </p>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Select BS Computer Science Semester
+                    Select Semester
                   </label>
                   <select
                     value={targetSemester}
-                    onChange={(e) => setTargetSemester(Number(e.target.value) as SemesterNumber)}
+                    onChange={(e) => {
+                      const sem = Number(e.target.value) as SemesterNumber;
+                      setTargetSemester(sem);
+                      const avail = subjects.filter((s) => s.semester === sem);
+                      if (avail.length > 0) setTargetSubjectId(avail[0].id);
+                    }}
                     className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                   >
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => (
-                      <option key={s} value={s}>
-                        Semester {s}
+                    {[1, 2, 3, 4, 5, 6, 7, 8].map((sem) => (
+                      <option key={sem} value={sem}>
+                        BS Computer Science - Semester {sem}
                       </option>
                     ))}
                   </select>
@@ -529,12 +754,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Select Subject (From Official Curriculum)
+                    Select Subject
                   </label>
                   <select
                     value={targetSubjectId}
                     onChange={(e) => setTargetSubjectId(e.target.value)}
-                    className="w-full text-xs font-medium px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                   >
                     {subjects
                       .filter((s) => s.semester === targetSemester)
@@ -546,183 +771,132 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                   </select>
                 </div>
 
-                <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100 text-xs text-purple-900">
-                  <p className="font-bold flex items-center gap-1.5">
-                    <BookOpen className="w-4 h-4 text-purple-700" />
-                    Selected Course Overview:
-                  </p>
-                  <p className="mt-1 text-slate-600">{currentSubject?.description}</p>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Target Sections in Semester {targetSemester}
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {(['All', 'A1', 'A2', 'B'] as const).map((sec) => (
+                      <button
+                        key={sec}
+                        type="button"
+                        onClick={() => handleToggleSection(sec)}
+                        className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition border ${
+                          targetSections.includes(sec)
+                            ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
+                            : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        {sec === 'All' ? 'All Sections' : `Section ${sec}`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* --- STEP 2: Details & Target Sections --- */}
             {wizardStep === 2 && (
               <div className="space-y-4">
                 <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-slate-700">
-                      Target Audience / Sections in Semester {targetSemester}
-                    </label>
-                    {(() => {
-                      const assignedCourseMatch = currentUser?.assignedCourses?.find(
-                        (c) => c.subjectId === targetSubjectId
-                      );
-                      if (assignedCourseMatch) {
-                        return (
-                          <span className="text-[11px] font-bold text-purple-700 bg-purple-50 border border-purple-200 px-2 py-0.5 rounded-lg">
-                            Your Assigned Sections: [{assignedCourseMatch.sections.join(', ')}]
-                          </span>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {(['All', 'A1', 'A2', 'B'] as ('All' | Section)[]).map((sec) => (
-                      <button
-                        type="button"
-                        key={sec}
-                        onClick={() => handleToggleSection(sec)}
-                        className={`px-4 py-2 rounded-xl text-xs font-bold border transition ${
-                          targetSections.includes(sec)
-                            ? 'bg-purple-700 text-white border-purple-700 shadow-xs'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        {sec === 'All' ? 'All Sections (A1, A2, B)' : `Section ${sec}`}
-                      </button>
-                    ))}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    Most assignments are common to all sections, but you can target individual sections when needed.
-                  </p>
-                </div>
-
-                <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Assignment Title *
+                    Assignment Title
                   </label>
                   <input
                     type="text"
-                    required
-                    placeholder="e.g. Assignment 01: Programming Practice Questions"
+                    placeholder="e.g., Assignment 1: Binary Search Tree Implementation"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
-                    className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                    className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Total Marks *
-                    </label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={100}
-                      value={totalMarks}
-                      onChange={(e) => setTotalMarks(Number(e.target.value))}
-                      className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      Submission Deadline Date *
-                    </label>
-                    <input
-                      type="date"
-                      required
-                      value={deadlineDate}
-                      onChange={(e) => setDeadlineDate(e.target.value)}
-                      className="w-full text-xs font-bold px-3 py-2 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
-                    />
-                  </div>
-                </div>
-
-                {/* Upload Question File (PDF or Word .docx) */}
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Upload Assignment Question File (PDF or Word .docx) *
+                    Total Marks
                   </label>
-                  <div className="border-2 border-dashed border-purple-200 bg-purple-50/50 rounded-2xl p-6 text-center hover:bg-purple-50 transition cursor-pointer relative">
+                  <input
+                    type="number"
+                    min={5}
+                    max={100}
+                    value={totalMarks}
+                    onChange={(e) => setTotalMarks(Number(e.target.value))}
+                    className="w-full text-xs font-bold px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Assignment Question Paper File (PDF or Word .docx)
+                  </label>
+                  <div className="border-2 border-dashed border-purple-200 rounded-2xl p-6 text-center hover:bg-purple-50/50 transition cursor-pointer relative">
                     <input
                       type="file"
-                      accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      accept=".pdf,.doc,.docx"
                       onChange={handleQuestionFileUpload}
                       className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                     />
                     <FileText className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                    {questionFile ? (
-                      <div className="space-y-1">
-                        <p className="text-xs font-extrabold text-purple-900 flex items-center justify-center gap-1.5">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                          {questionFile.name}
-                        </p>
-                        <p className="text-[11px] text-slate-500 font-mono">
-                          {questionFile.size >= 1024 * 1024
-                            ? `${(questionFile.size / (1024 * 1024)).toFixed(1)} MB`
-                            : `${Math.round(questionFile.size / 1024)} KB`}{' '}
-                          • Click or drag to replace file
-                        </p>
-                      </div>
-                    ) : (
-                      <>
-                        <p className="text-xs font-bold text-slate-800">
-                          Click or drag the official Assignment Question Document
-                        </p>
-                        <p className="text-[11px] text-slate-400 mt-1">
-                          Only PDF (.pdf) and Microsoft Word (.docx, .doc) files are accepted
-                        </p>
-                      </>
-                    )}
+                    <p className="text-xs font-bold text-slate-800">
+                      {questionFile ? questionFile.name : 'Upload Question Paper (PDF or Word .docx)'}
+                    </p>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Max file size: 25 MB • Official question document
+                    </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* --- STEP 3: Midnight Deadline & Instant Publish --- */}
             {wizardStep === 3 && (
               <div className="space-y-4">
-                <div className="bg-purple-900 text-white p-5 rounded-2xl shadow-inner space-y-2">
-                  <div className="flex items-center gap-2">
-                    <Clock className="w-5 h-5 text-purple-300" />
-                    <span className="font-extrabold text-sm">Midnight Expiry & Lockout Enforcement</span>
-                  </div>
-                  <p className="text-xs text-purple-200">
-                    The assignment portal will accept submissions until <strong>11:59:59 PM (Midnight)</strong> of the selected date. At midnight, submissions automatically lock.
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Submission Deadline (Midnight Automatic Lock)
+                  </label>
+                  <input
+                    type="date"
+                    value={deadlineDate}
+                    onChange={(e) => setDeadlineDate(e.target.value)}
+                    className="w-full text-xs font-semibold px-3 py-2.5 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-purple-600"
+                  />
+                  <p className="text-[11px] text-amber-700 mt-1.5 flex items-center gap-1 font-medium">
+                    <Clock className="w-3.5 h-3.5" />
+                    Portal automatically locks at 11:59:59 PM (Midnight) on this date.
                   </p>
                 </div>
 
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-xs">
-                  <p className="font-bold text-slate-800">Publishing Summary:</p>
-                  <ul className="list-disc list-inside text-slate-600 space-y-1">
-                    <li>Course: {currentSubject.code} - {currentSubject.name}</li>
-                    <li>Semester: BS CS Semester {targetSemester}</li>
-                    <li>Target Sections: {targetSections.join(', ')}</li>
-                    <li>Total Marks: {totalMarks}</li>
-                    <li>Question Document: {questionFile?.name || 'Attached Document'}</li>
-                    <li>Deadline: {deadlineDate} at 11:59:59 PM (Midnight)</li>
-                  </ul>
-                  <p className="text-[11px] text-emerald-700 font-semibold pt-1">
-                    ✓ Immediate availability: As soon as you click Publish, this assignment will be live for all matching students.
-                  </p>
+                <div className="bg-purple-50 rounded-2xl p-4 border border-purple-200 text-xs space-y-2">
+                  <span className="font-bold text-purple-900 block">Assignment Summary:</span>
+                  <div className="grid grid-cols-2 gap-2 text-[11px]">
+                    <div>
+                      <span className="text-slate-500">Subject:</span>{' '}
+                      <strong>{currentSubject.code} - {currentSubject.name}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Semester:</span>{' '}
+                      <strong>Semester {targetSemester}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Sections:</span>{' '}
+                      <strong>{targetSections.join(', ')}</strong>
+                    </div>
+                    <div>
+                      <span className="text-slate-500">Total Marks:</span>{' '}
+                      <strong>{totalMarks}</strong>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
 
-            {/* Wizard Navigation Footer */}
-            <div className="flex items-center justify-between pt-6 mt-6 border-t border-slate-100">
+            {/* Wizard Controls */}
+            <div className="flex items-center justify-between border-t border-slate-100 pt-4 mt-6">
               <button
                 type="button"
                 disabled={wizardStep === 1}
                 onClick={() => setWizardStep((prev) => (prev - 1) as any)}
                 className={`px-4 py-2 rounded-xl text-xs font-bold ${
-                  wizardStep === 1
-                    ? 'text-slate-300 cursor-not-allowed'
-                    : 'text-slate-600 hover:bg-slate-100'
+                  wizardStep === 1 ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 Back
@@ -732,20 +906,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                 <button
                   type="button"
                   onClick={() => {
-                    if (wizardStep === 2) {
-                      if (!title.trim()) {
-                        setWizardError('Please enter an assignment title.');
-                        return;
-                      }
-                      if (!questionFile) {
-                        setWizardError('Please upload the assignment question file in PDF (.pdf) or Word (.docx) format.');
-                        return;
-                      }
+                    if (wizardStep === 2 && (!title.trim() || !questionFile)) {
+                      setWizardError('Please provide a title and upload the question paper file.');
+                      return;
                     }
                     setWizardError(null);
                     setWizardStep((prev) => (prev + 1) as any);
                   }}
-                  className="px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-1 shadow-xs"
+                  className="px-5 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs flex items-center gap-1 shadow-md shadow-purple-900/20"
                 >
                   Continue
                   <ChevronRight className="w-4 h-4" />

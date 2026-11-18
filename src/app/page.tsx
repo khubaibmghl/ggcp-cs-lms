@@ -12,6 +12,7 @@ import { LoginPage } from '@/components/auth/LoginPage';
 export default function Home() {
   const { currentUser } = useAuth();
   const [currentTab, setCurrentTab] = useState<string>('dashboard');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // If user is not authenticated, show the Intelligent Landing Login Page!
   if (!currentUser) {
@@ -22,11 +23,19 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Top Navbar with Profile & Logout */}
-      <Navbar />
+      <Navbar
+        isMobileMenuOpen={mobileMenuOpen}
+        onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
+      />
 
       {/* Main Container with Sidebar + Content */}
       <div className="flex-1 flex max-w-7xl w-full mx-auto">
-        <Sidebar currentTab={currentTab} setCurrentTab={setCurrentTab} />
+        <Sidebar
+          currentTab={currentTab}
+          setCurrentTab={setCurrentTab}
+          isMobileOpen={mobileMenuOpen}
+          onCloseMobile={() => setMobileMenuOpen(false)}
+        />
 
         <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto">
           {currentUser.role === 'admin' && (

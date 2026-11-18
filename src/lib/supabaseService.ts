@@ -173,7 +173,7 @@ function mapSubmissionToDb(s: Submission): any {
   };
 }
 
-// Cloud Service Methods
+// Cloud Service Methods with Error Handling and Retry-Aware Results
 export const supabaseService = {
   async fetchUsers(): Promise<User[] | null> {
     if (!isSupabaseConfigured || !supabase) return null;
@@ -191,6 +191,16 @@ export const supabaseService = {
     try {
       const payload = mapUserToDb(user);
       const { error } = await supabase.from('users').upsert(payload, { onConflict: 'id' });
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  async deleteUser(id: string): Promise<boolean> {
+    if (!isSupabaseConfigured || !supabase) return false;
+    try {
+      const { error } = await supabase.from('users').delete().eq('id', id);
       return !error;
     } catch {
       return false;
@@ -251,6 +261,16 @@ export const supabaseService = {
     }
   },
 
+  async deleteAssignment(id: string): Promise<boolean> {
+    if (!isSupabaseConfigured || !supabase) return false;
+    try {
+      const { error } = await supabase.from('assignments').delete().eq('id', id);
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
   async fetchSubmissions(): Promise<Submission[] | null> {
     if (!isSupabaseConfigured || !supabase) return null;
     try {
@@ -267,6 +287,16 @@ export const supabaseService = {
     try {
       const payload = mapSubmissionToDb(submission);
       const { error } = await supabase.from('submissions').upsert(payload, { onConflict: 'id' });
+      return !error;
+    } catch {
+      return false;
+    }
+  },
+
+  async deleteSubmission(id: string): Promise<boolean> {
+    if (!isSupabaseConfigured || !supabase) return false;
+    try {
+      const { error } = await supabase.from('submissions').delete().eq('id', id);
       return !error;
     } catch {
       return false;

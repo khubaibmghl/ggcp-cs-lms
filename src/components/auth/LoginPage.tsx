@@ -119,6 +119,12 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [showHelpModal, setShowHelpModal] = useState(false);
+  const [isCapsLockOn, setIsCapsLockOn] = useState(false);
+
+  const handleKeyModifierCheck = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    setIsCapsLockOn(e.getModifierState('CapsLock'));
+  };
 
   // Register State
   const [name, setName] = useState('');
@@ -431,9 +437,13 @@ export const LoginPage: React.FC = () => {
                       <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
                         Password
                       </label>
-                      <span className="text-[11px] text-purple-400 hover:text-purple-300 cursor-pointer transition">
+                      <button
+                        type="button"
+                        onClick={() => setShowHelpModal(true)}
+                        className="text-[11px] text-purple-400 hover:text-purple-300 font-semibold transition"
+                      >
                         Help & Support
-                      </span>
+                      </button>
                     </div>
                     <div className="relative">
                       <input
@@ -442,6 +452,8 @@ export const LoginPage: React.FC = () => {
                         placeholder="••••••••••••"
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
+                        onKeyDown={handleKeyModifierCheck}
+                        onKeyUp={handleKeyModifierCheck}
                         className="w-full text-xs font-semibold pl-10 pr-10 py-3.5 rounded-xl bg-slate-950/80 border border-slate-700/80 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 transition"
                       />
                       <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-4" />
@@ -454,6 +466,11 @@ export const LoginPage: React.FC = () => {
                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                       </button>
                     </div>
+                    {isCapsLockOn && (
+                      <p className="text-[10px] text-amber-400 font-bold mt-1 flex items-center gap-1 animate-in fade-in">
+                        <span>⚠</span> Caps Lock is ON
+                      </p>
+                    )}
                   </div>
 
                   {/* Sign In Submit Button */}
@@ -474,6 +491,67 @@ export const LoginPage: React.FC = () => {
                       </>
                     )}
                   </button>
+
+                  {/* Demo Quick-Fill Bar */}
+                  <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400 flex items-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-purple-400" />
+                        Quick Demo Logins
+                      </span>
+                      <span className="text-[10px] text-slate-500">Click to fill</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIdentifier('admin');
+                          setPassword('admin123');
+                          setLoginError(null);
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 hover:bg-purple-950/60 border border-slate-800 hover:border-purple-600/60 text-left transition group"
+                        title="Sign in as College Admin"
+                      >
+                        <span className="font-extrabold text-white text-[11px] block group-hover:text-purple-300">
+                          Admin
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">admin123</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIdentifier('03001234567');
+                          setPassword('teacher123');
+                          setLoginError(null);
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 hover:bg-indigo-950/60 border border-slate-800 hover:border-indigo-600/60 text-left transition group"
+                        title="Sign in as Faculty Member"
+                      >
+                        <span className="font-extrabold text-white text-[11px] block group-hover:text-indigo-300">
+                          Teacher
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">teacher123</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIdentifier('BCS1-A1-001');
+                          setPassword('student123');
+                          setLoginError(null);
+                        }}
+                        className="p-2 rounded-xl bg-slate-950 hover:bg-emerald-950/60 border border-slate-800 hover:border-emerald-600/60 text-left transition group"
+                        title="Sign in as BSCS Student"
+                      >
+                        <span className="font-extrabold text-white text-[11px] block group-hover:text-emerald-300">
+                          Student
+                        </span>
+                        <span className="text-[10px] text-slate-400 font-mono block">student123</span>
+                      </button>
+                    </div>
+                  </div>
                 </form>
               </div>
             )}
@@ -822,6 +900,59 @@ export const LoginPage: React.FC = () => {
           <span>SSL 256-Bit Encrypted</span>
         </div>
       </div>
+
+      {/* --- MODAL: HELP & SUPPORT DIALOG --- */}
+      {showHelpModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 text-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <HelpCircle className="w-5 h-5 text-purple-400" />
+                <h3 className="font-extrabold text-sm text-white">Login & Account Support</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHelpModal(false)}
+                className="w-7 h-7 rounded-full bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-300">
+              <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-800/40 space-y-1">
+                <span className="font-bold text-purple-300 block">Student Login Format</span>
+                <p className="text-[11px] text-purple-200/80">
+                  Your Student ID format is <code className="bg-purple-900/60 px-1 py-0.5 rounded text-white font-mono">BCS[Sem]-[Sec]-[Roll]</code>.
+                  For example, Semester 1, Section A1, Roll #1 is <strong className="text-white font-mono">BCS1-A1-001</strong>.
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-indigo-950/40 border border-indigo-800/40 space-y-1">
+                <span className="font-bold text-indigo-300 block">Teacher Login</span>
+                <p className="text-[11px] text-indigo-200/80">
+                  Faculty members log in using their registered 11-digit phone number (e.g. <strong className="text-white font-mono">03001234567</strong>).
+                </p>
+              </div>
+
+              <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1">
+                <span className="font-bold text-slate-300 block">Lost Password or Account Lockout?</span>
+                <p className="text-[11px] text-slate-400">
+                  Contact Department of Computer Science or HOD (Prof. Dr. Tariq Mahmood) at Govt. Graduate College Pasrur for password reset and roll number verification.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowHelpModal(false)}
+              className="w-full py-2.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -24,6 +24,10 @@ import {
   ExternalLink,
   ShieldCheck,
   FileCheck2,
+  Eye,
+  EyeOff,
+  Maximize2,
+  FileCode,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -43,6 +47,10 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [showPreview, setShowPreview] = useState(true);
+  const [previewPaper, setPreviewPaper] = useState(false);
+  const [showExtractedText, setShowExtractedText] = useState(false);
+  const [integrityAgreed, setIntegrityAgreed] = useState(true);
 
   // Check if student already submitted earlier
   const existingSub = dataStore
@@ -183,10 +191,30 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
     document.body.removeChild(link);
   };
 
+  const openInNewTab = (srcUrl?: string) => {
+    if (!srcUrl) return;
+    const newWin = window.open();
+    if (newWin) {
+      if (srcUrl.startsWith('data:application/pdf')) {
+        newWin.document.write(
+          `<!DOCTYPE html><html><head><title>Document Preview - GGCP LMS</title><style>body,html{margin:0;padding:0;height:100%;overflow:hidden;}</style></head><body><iframe src="${srcUrl}" style="border:0;width:100%;height:100%;"></iframe></body></html>`
+        );
+      } else {
+        newWin.location.href = srcUrl;
+      }
+    }
+  };
+
   const handleSubmit = () => {
     if (uploadedFiles.length === 0) {
       setSubmissionError('Please attach your solution document (PDF or Word) before submitting.');
       showWarning('File Required', 'Attach your completed assignment file.');
+      return;
+    }
+
+    if (!integrityAgreed) {
+      setSubmissionError('Please accept the academic honesty pledge before submitting.');
+      showWarning('Pledge Required', 'You must agree to the academic honesty pledge.');
       return;
     }
 
@@ -250,11 +278,35 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
   };
 
   const attachedFile = uploadedFiles[0];
-  const isPdf = attachedFile?.name.toLowerCase().endsWith('.pdf');
+  const attachedFileNameLower = attachedFile?.name?.toLowerCase() || '';
+  const isPdf =
+    attachedFileNameLower.endsWith('.pdf') ||
+    attachedFile?.dataUrl?.startsWith('data:application/pdf') ||
+    false;
+  const isImage =
+    attachedFileNameLower.endsWith('.png') ||
+    attachedFileNameLower.endsWith('.jpg') ||
+    attachedFileNameLower.endsWith('.jpeg') ||
+    attachedFileNameLower.endsWith('.webp') ||
+    attachedFile?.dataUrl?.startsWith('data:image/') ||
+    false;
+
+  const resourceFileNameLower = assignment.resourceFileName?.toLowerCase() || '';
+  const isResourcePdf =
+    resourceFileNameLower.endsWith('.pdf') ||
+    assignment.resourceFileContent?.startsWith('data:application/pdf') ||
+    false;
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 animate-in fade-in duration-200">
-      <div className="bg-white rounded-3xl max-w-2xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+      <div
+        className={`bg-white rounded-3xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden transition-all duration-300 ${
+          (step === 2 && showPreview && attachedFile) ||
+          (step === 1 && previewPaper && assignment.resourceFileContent)
+            ? 'max-w-4xl'
+            : 'max-w-2xl'
+        }`}
+      >
         {/* Header */}
         <div className="p-6 bg-slate-900 text-white flex-shrink-0">
           <div className="flex items-center justify-between mb-4">
@@ -345,28 +397,77 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
             <div className="space-y-4">
               {/* Official Question Paper Download Card */}
               {assignment.resourceFileContent ? (
-                <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3 truncate">
-                    <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
-                      <FileText className="w-5 h-5" />
+                <div className="space-y-3">
+                  <div className="bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 truncate">
+                      <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                        <FileText className="w-5 h-5" />
+                      </div>
+                      <div className="truncate">
+                        <h4 className="text-xs font-bold text-slate-900 truncate">
+                          {assignment.resourceFileName || 'Assignment_Questions.pdf'}
+                        </h4>
+                        <p className="text-[11px] text-purple-700 font-medium">
+                          Official Question Paper provided by instructor
+                        </p>
+                      </div>
                     </div>
-                    <div className="truncate">
-                      <h4 className="text-xs font-bold text-slate-900 truncate">
-                        {assignment.resourceFileName || 'Assignment_Questions.pdf'}
-                      </h4>
-                      <p className="text-[11px] text-purple-700 font-medium">
-                        Official Question Paper provided by instructor
-                      </p>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewPaper(!previewPaper)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-800 font-bold text-xs transition"
+                      >
+                        {previewPaper ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        <span>{previewPaper ? 'Hide Preview' : 'In-Browser Preview'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDownloadQuestionPaper}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                        <span>Download</span>
+                      </button>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleDownloadQuestionPaper}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition flex-shrink-0"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                    <span>Download Paper</span>
-                  </button>
+
+                  {/* Question Paper In-line Preview */}
+                  {previewPaper && (
+                    <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-950 shadow-md animate-in fade-in duration-200">
+                      <div className="bg-slate-900 text-slate-300 px-4 py-2 flex items-center justify-between text-xs border-b border-slate-800">
+                        <span className="font-semibold text-white flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5 text-purple-400" />
+                          Question Paper Preview
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => openInNewTab(assignment.resourceFileContent)}
+                          className="text-purple-300 hover:text-white flex items-center gap-1 text-[11px] font-bold transition"
+                        >
+                          <Maximize2 className="w-3 h-3" />
+                          <span>Full Window</span>
+                        </button>
+                      </div>
+                      {isResourcePdf ? (
+                        <div className="w-full h-80 sm:h-[420px] bg-slate-100">
+                          <iframe
+                            src={assignment.resourceFileContent}
+                            className="w-full h-full border-0"
+                            title="Question Paper Preview"
+                          />
+                        </div>
+                      ) : (
+                        <div className="p-4 flex items-center justify-center bg-slate-900 max-h-[420px] overflow-auto">
+                          <img
+                            src={assignment.resourceFileContent}
+                            alt="Question Paper Preview"
+                            className="max-h-96 w-auto object-contain rounded-lg"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 flex items-center gap-2 text-xs text-slate-600">
@@ -477,15 +578,28 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
 
               {/* Attached Document Card */}
               {attachedFile && (
-                <div className="space-y-2">
-                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                    Attached Solution Document
-                  </span>
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Attached Solution Document
+                    </span>
+                    {(isPdf || isImage) && (
+                      <button
+                        type="button"
+                        onClick={() => setShowPreview(!showPreview)}
+                        className="text-xs font-bold text-purple-700 hover:text-purple-800 flex items-center gap-1.5 transition"
+                      >
+                        {showPreview ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        <span>{showPreview ? 'Hide In-Browser Preview' : 'Show In-Browser Preview'}</span>
+                      </button>
+                    )}
+                  </div>
+
                   <div className="p-4 bg-white rounded-2xl border border-purple-200 flex items-center justify-between text-xs shadow-xs">
                     <div className="flex items-center gap-3 truncate">
                       <div
                         className={`w-10 h-10 rounded-xl flex items-center justify-center text-white flex-shrink-0 ${
-                          isPdf ? 'bg-rose-500' : 'bg-blue-600'
+                          isPdf ? 'bg-rose-500' : isImage ? 'bg-amber-500' : 'bg-blue-600'
                         }`}
                       >
                         <FileText className="w-5 h-5" />
@@ -513,7 +627,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
                         title="Verify / Download your file"
                       >
                         <Download className="w-3.5 h-3.5" />
-                        <span>Verify File</span>
+                        <span className="hidden sm:inline">Verify File</span>
                       </button>
 
                       <button
@@ -526,6 +640,81 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
                       </button>
                     </div>
                   </div>
+
+                  {/* IN-BROWSER PDF / DOCUMENT PREVIEW */}
+                  {showPreview && (attachedFile.dataUrl || attachedFile.url) && (
+                    <div className="rounded-2xl border border-slate-200 overflow-hidden bg-slate-950 shadow-md animate-in fade-in duration-200">
+                      <div className="bg-slate-900 text-slate-300 px-4 py-2.5 flex items-center justify-between text-xs border-b border-slate-800">
+                        <div className="flex items-center gap-2 font-semibold">
+                          <Eye className="w-4 h-4 text-purple-400" />
+                          <span className="text-white truncate max-w-[260px] sm:max-w-md">
+                            Preview: {attachedFile.name}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            type="button"
+                            onClick={() => openInNewTab(attachedFile.dataUrl || attachedFile.url)}
+                            className="text-purple-300 hover:text-white flex items-center gap-1 text-[11px] font-bold transition"
+                            title="Open in new window / full screen"
+                          >
+                            <Maximize2 className="w-3 h-3" />
+                            <span>Full Window</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {isPdf ? (
+                        <div className="w-full h-80 sm:h-[420px] bg-slate-100">
+                          <iframe
+                            src={attachedFile.dataUrl || attachedFile.url}
+                            className="w-full h-full border-0"
+                            title="Submitted PDF Preview"
+                          />
+                        </div>
+                      ) : isImage ? (
+                        <div className="p-4 flex items-center justify-center bg-slate-900 max-h-[420px] overflow-auto">
+                          <img
+                            src={attachedFile.dataUrl || attachedFile.url}
+                            alt="Attached file preview"
+                            className="max-h-96 w-auto object-contain rounded-lg"
+                          />
+                        </div>
+                      ) : (
+                        <div className="p-8 text-center bg-slate-900 text-slate-300 space-y-2">
+                          <FileText className="w-8 h-8 text-blue-400 mx-auto" />
+                          <p className="text-xs font-bold text-white">Word Document (.docx / .doc)</p>
+                          <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
+                            Word documents cannot be previewed natively in the browser frame. Click &ldquo;Verify File&rdquo; above to verify your file contents.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Optional: Extracted Text Inspection */}
+                  {attachedFile.extractedText && (
+                    <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                      <button
+                        type="button"
+                        onClick={() => setShowExtractedText(!showExtractedText)}
+                        className="w-full px-3.5 py-2 flex items-center justify-between text-xs text-slate-700 hover:bg-slate-100 font-semibold transition"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <FileCode className="w-3.5 h-3.5 text-purple-600" />
+                          System Text Recognition ({attachedFile.extractedText.trim().split(/\s+/).length} words detected)
+                        </span>
+                        <span className="text-[11px] text-purple-700 font-bold">
+                          {showExtractedText ? 'Collapse Text' : 'View Extracted Text'}
+                        </span>
+                      </button>
+                      {showExtractedText && (
+                        <div className="p-3 bg-white border-t border-slate-200 text-slate-700 font-mono text-[11px] max-h-48 overflow-y-auto whitespace-pre-wrap leading-relaxed">
+                          {attachedFile.extractedText}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -575,15 +764,43 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
                 </span>
                 <div className="flex items-center justify-between bg-white p-3 rounded-xl border border-slate-200">
                   <div className="flex items-center gap-2.5 truncate">
-                    <FileText className={`w-5 h-5 ${isPdf ? 'text-rose-600' : 'text-blue-600'}`} />
+                    <FileText className={`w-5 h-5 ${isPdf ? 'text-rose-600' : isImage ? 'text-amber-500' : 'text-blue-600'}`} />
                     <span className="font-bold text-slate-800 text-xs truncate">
                       {attachedFile?.name || 'No file selected'}
                     </span>
                   </div>
-                  <span className="text-[11px] text-slate-500 font-mono flex-shrink-0">
-                    {formatBytes(attachedFile?.size || 0)}
-                  </span>
+                  <div className="flex items-center gap-3 flex-shrink-0">
+                    <span className="text-[11px] text-slate-500 font-mono">
+                      {formatBytes(attachedFile?.size || 0)}
+                    </span>
+                    {(attachedFile?.dataUrl || attachedFile?.url) && (
+                      <button
+                        type="button"
+                        onClick={() => openInNewTab(attachedFile.dataUrl || attachedFile.url)}
+                        className="text-purple-700 hover:text-purple-900 font-bold text-xs flex items-center gap-1"
+                        title="Preview attached document in new window"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>Preview</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
+              </div>
+
+              {/* Academic Integrity Pledge Checkbox */}
+              <div className="p-3.5 rounded-2xl bg-purple-50/70 border border-purple-200 flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  id="integrityCheck"
+                  checked={integrityAgreed}
+                  onChange={(e) => setIntegrityAgreed(e.target.checked)}
+                  className="mt-0.5 w-4 h-4 rounded text-purple-600 focus:ring-purple-500 cursor-pointer"
+                />
+                <label htmlFor="integrityCheck" className="text-xs text-slate-700 cursor-pointer select-none">
+                  <strong className="text-slate-900 block mb-0.5">Academic Honesty Pledge</strong>
+                  I certify that this assignment solution is solely my own authentic work, prepared for Govt. Graduate College Pasrur, and adheres to the college academic integrity policy without unauthorized collaboration or plagiarism.
+                </label>
               </div>
 
               {/* Resubmission / Policy Banner */}
@@ -647,7 +864,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
           ) : (
             <button
               type="button"
-              disabled={isDeadlinePassed() || uploadedFiles.length === 0}
+              disabled={isDeadlinePassed() || uploadedFiles.length === 0 || !integrityAgreed}
               onClick={handleSubmit}
               className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
