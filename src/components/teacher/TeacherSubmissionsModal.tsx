@@ -28,7 +28,9 @@ import {
   BookOpen,
   HelpCircle,
   Image as ImageIcon,
+  Play,
 } from 'lucide-react';
+import { TeacherGradingWorkspace } from './TeacherGradingWorkspace';
 
 interface TeacherSubmissionsModalProps {
   assignment: Assignment;
@@ -63,6 +65,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
     return '';
   });
 
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceStartIndex, setWorkspaceStartIndex] = useState(0);
+  const [dataVersion, setDataVersion] = useState(0);
+
   const allSubmissions = dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id);
 
   // Filter submissions by target section
@@ -83,9 +89,9 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const missingStudents = sectionStudents.filter((s) => !submittedRolls.has(s.rollNumber || 0));
 
   const handleOpenGrading = (sub: Submission) => {
-    setSelectedSubmission(sub);
-    setGradingScore(sub.score !== undefined ? sub.score : '');
-    setGradingFeedback(sub.teacherFeedback || '');
+    const idx = filteredSubmissions.findIndex((s) => s.id === sub.id);
+    setWorkspaceStartIndex(idx >= 0 ? idx : 0);
+    setWorkspaceOpen(true);
   };
 
   const handleDownloadStudentFile = (file: UploadedFile) => {
@@ -348,6 +354,20 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
             >
               <Sparkles className="w-3.5 h-3.5" />
               {geminiApiKey ? 'Gemini AI Active' : 'AI Engine Settings'}
+            </button>
+
+            <button
+              type="button"
+              disabled={filteredSubmissions.length === 0}
+              onClick={() => {
+                setWorkspaceStartIndex(0);
+                setWorkspaceOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3.5 py-1 rounded-xl bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white text-xs font-black shadow-sm disabled:opacity-40 transition"
+              title="Launch classroom map and mark students one by one with live telemetry console"
+            >
+              <Play className="w-3.5 h-3.5 fill-white" />
+              Sequential Marking Workspace
             </button>
           </div>
         </div>
@@ -1252,6 +1272,16 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               </div>
             </div>
           </div>
+        )}
+        {/* --- SEQUENTIAL GRADING THEATER WITH TELEMETRY CONSOLE --- */}
+        {workspaceOpen && (
+          <TeacherGradingWorkspace
+            assignment={assignment}
+            submissions={filteredSubmissions}
+            initialStudentIndex={workspaceStartIndex}
+            onClose={() => setWorkspaceOpen(false)}
+            onUpdated={() => setDataVersion((v) => v + 1)}
+          />
         )}
       </div>
     </div>
