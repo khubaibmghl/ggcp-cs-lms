@@ -22,6 +22,91 @@ import {
   Sparkle,
 } from 'lucide-react';
 
+export interface PasswordStrengthResult {
+  score: number;
+  label: string;
+  color: string;
+  isValid: boolean;
+  reason?: string;
+  hasMinLength: boolean;
+  hasLettersAndNumbers: boolean;
+  hasNoTrivialPatterns: boolean;
+}
+
+export function evaluatePasswordStrength(password: string): PasswordStrengthResult {
+  if (!password) {
+    return {
+      score: 0,
+      label: 'Enter password',
+      color: 'bg-slate-700',
+      isValid: false,
+      hasMinLength: false,
+      hasLettersAndNumbers: false,
+      hasNoTrivialPatterns: true,
+    };
+  }
+
+  const hasMinLength = password.length >= 8;
+  const isAllSameChar = /^(.)\1+$/.test(password);
+  const lower = password.toLowerCase();
+  const sequentialPatterns = [
+    '12345678', '87654321', '123456789', 'abcdefgh', 'password', 'qwertyui',
+    '00000000', '11111111', 'admin123', 'pakistan'
+  ];
+  const hasSequential = sequentialPatterns.some((p) => lower.includes(p));
+  const hasNoTrivialPatterns = !isAllSameChar && !hasSequential;
+
+  const hasLetters = /[a-zA-Z]/.test(password);
+  const hasDigits = /\d/.test(password);
+  const hasLettersAndNumbers = hasLetters && hasDigits;
+
+  const hasUpper = /[A-Z]/.test(password);
+  const hasLower = /[a-z]/.test(password);
+  const hasSpecial = /[^a-zA-Z0-9]/.test(password);
+
+  let reason: string | undefined;
+  if (!hasMinLength) {
+    reason = 'Password must be at least 8 characters long.';
+  } else if (!hasNoTrivialPatterns) {
+    reason = 'Repetitive or sequential patterns like "00000" or "123456" are not allowed.';
+  } else if (!hasLettersAndNumbers) {
+    reason = 'Password must contain a mix of letters and numbers.';
+  }
+
+  const isValid = hasMinLength && hasNoTrivialPatterns && hasLettersAndNumbers;
+
+  let score = 1;
+  if (hasMinLength) score++;
+  if (hasLettersAndNumbers && hasNoTrivialPatterns) score++;
+  if ((hasUpper && hasLower && hasSpecial) || password.length >= 12) score++;
+
+  let label = 'Weak';
+  let color = 'bg-rose-500';
+
+  if (!hasMinLength || !hasNoTrivialPatterns || !hasLettersAndNumbers) {
+    score = 1;
+    label = 'Weak';
+    color = 'bg-rose-500';
+  } else if (score >= 4) {
+    label = 'Strong';
+    color = 'bg-emerald-500';
+  } else {
+    label = 'Intermediate';
+    color = 'bg-amber-400';
+  }
+
+  return {
+    score,
+    label,
+    color,
+    isValid,
+    reason,
+    hasMinLength,
+    hasLettersAndNumbers,
+    hasNoTrivialPatterns,
+  };
+}
+
 export const LoginPage: React.FC = () => {
   const { login, registerStudent, users } = useAuth();
 
@@ -45,6 +130,9 @@ export const LoginPage: React.FC = () => {
   const [regConfirmPassword, setRegConfirmPassword] = useState('');
   const [showRegPassword, setShowRegPassword] = useState(false);
   const [regError, setRegError] = useState<string | null>(null);
+
+  // Real-time password strength evaluation
+  const passwordStrength = useMemo(() => evaluatePasswordStrength(regPassword), [regPassword]);
 
   // Real-time check for duplicate student in the SAME class (Semester + Section)
   const duplicateStudent = useMemo(() => {
@@ -124,8 +212,9 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    if (regPassword.length < 6) {
-      setRegError('Password must be at least 6 characters.');
+    const strength = evaluatePasswordStrength(regPassword);
+    if (!strength.isValid) {
+      setRegError(strength.reason || 'Please use an intermediate strength password (at least 8 characters with a mix of letters and numbers, avoiding trivial patterns).');
       return;
     }
 
@@ -591,7 +680,7 @@ export const LoginPage: React.FC = () => {
                             <input
                               type={showRegPassword ? 'text' : 'password'}
                               required
-                              placeholder="Min 6 chars"
+                              placeholder="Min 8 chars (e.g. Pasrur123)"
                               value={regPassword}
                               onChange={(e) => setRegPassword(e.target.value)}
                               className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl bg-slate-950/80 border border-slate-700 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500"
@@ -621,6 +710,71 @@ export const LoginPage: React.FC = () => {
                           />
                         </div>
                       </div>
+
+                      {/* Real-time Password Security Meter */}
+                      {regPassword && (
+                        <div className="space-y-1.5 p-3 rounded-xl bg-slate-900/80 border border-slate-800 text-xs animate-in fade-in">
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-400 font-semibold flex items-center gap-1.5">
+                              <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                              Password Security Level:
+                            </span>
+                            <span
+                              className={`font-extrabold px-2 py-0.5 rounded text-[10px] uppercase tracking-wider ${
+                                passwordStrength.label === 'Strong'
+                                  ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/40'
+                                  : passwordStrength.label === 'Intermediate'
+                                  ? 'bg-amber-950 text-amber-300 border border-amber-500/40'
+                                  : 'bg-rose-950 text-rose-300 border border-rose-500/40'
+                              }`}
+                            >
+                              {passwordStrength.label}
+                            </span>
+                          </div>
+
+                          {/* 4-Segment Strength Bar */}
+                          <div className="grid grid-cols-4 gap-1.5 h-1.5">
+                            {[1, 2, 3, 4].map((step) => (
+                              <div
+                                key={step}
+                                className={`h-full rounded-full transition-all duration-300 ${
+                                  passwordStrength.score >= step
+                                    ? passwordStrength.color
+                                    : 'bg-slate-800'
+                                }`}
+                              />
+                            ))}
+                          </div>
+
+                          {/* Security Checklist Pills */}
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] pt-1">
+                            <span
+                              className={`flex items-center gap-1 ${
+                                passwordStrength.hasMinLength ? 'text-emerald-400' : 'text-slate-500'
+                              }`}
+                            >
+                              <span>{passwordStrength.hasMinLength ? '✓' : '○'}</span>
+                              Min 8 characters
+                            </span>
+                            <span
+                              className={`flex items-center gap-1 ${
+                                passwordStrength.hasLettersAndNumbers ? 'text-emerald-400' : 'text-slate-500'
+                              }`}
+                            >
+                              <span>{passwordStrength.hasLettersAndNumbers ? '✓' : '○'}</span>
+                              Letters & numbers mix
+                            </span>
+                            <span
+                              className={`flex items-center gap-1 ${
+                                passwordStrength.hasNoTrivialPatterns ? 'text-emerald-400' : 'text-slate-500'
+                              }`}
+                            >
+                              <span>{passwordStrength.hasNoTrivialPatterns ? '✓' : '○'}</span>
+                              No simple patterns (00000, 123456)
+                            </span>
+                          </div>
+                        </div>
+                      )}
 
                       {/* Submit Registration Button */}
                       <button
