@@ -507,19 +507,37 @@ Return ONLY a valid JSON object matching this schema:
   "instructorFeedbackDraft": "comprehensive feedback ready for instructor to give to student"
 }`;
 
-        const geminiRes = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey.trim()}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-            }),
-          }
-        );
+        const candidateModels = [
+          'gemini-3-flash-preview',
+          'gemini-3.1-flash-lite',
+          'gemini-2.5-flash',
+          'gemini-1.5-flash',
+        ];
 
-        if (geminiRes.ok) {
+        let geminiRes: Response | null = null;
+        for (const modelName of candidateModels) {
+          try {
+            const resp = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey.trim()}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }],
+                  generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+                }),
+              }
+            );
+            if (resp.ok) {
+              geminiRes = resp;
+              break;
+            }
+          } catch {
+            // try next model
+          }
+        }
+
+        if (geminiRes && geminiRes.ok) {
           const geminiData = await geminiRes.json();
           const responseText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
           if (responseText) {

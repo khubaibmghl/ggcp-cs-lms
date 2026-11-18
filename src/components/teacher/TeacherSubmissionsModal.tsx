@@ -504,7 +504,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                   Assignment Correction Engine Configuration
                 </h4>
                 <p className="text-[11px] text-purple-800/80 mt-0.5">
-                  Current Mode: <strong>{geminiApiKey ? 'Google Gemini 1.5 Flash' : 'Academic Strict Rule Evaluator'}</strong>. Zero-tolerance scoring prevents false marks for off-topic/administrative files. To enable deep semantic grading, paste your Google Gemini API key.
+                  Current Mode: <strong>{geminiApiKey ? 'Google Gemini AI Engine (Active)' : 'Academic Strict Rule Evaluator'}</strong>. Zero-tolerance scoring prevents false marks for off-topic/administrative files. To enable deep semantic grading, paste your Google Gemini API key.
                 </p>
               </div>
               <div className="flex items-center gap-2 w-full sm:w-auto">
