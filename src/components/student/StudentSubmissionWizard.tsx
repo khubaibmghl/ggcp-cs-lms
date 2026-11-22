@@ -30,6 +30,7 @@ import {
   FileCode,
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
+import { formatDateDDMMMYYYY, formatDateTimeDDMMMYYYY } from '@/lib/dateUtils';
 
 interface StudentSubmissionWizardProps {
   assignment: Assignment;
@@ -516,7 +517,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
                   <span>
-                    Deadline: <strong>{assignment.deadlineDate}</strong> at 11:59:59 PM (Midnight)
+                    Deadline: <strong>{formatDateDDMMMYYYY(assignment.deadlineDate)}</strong> at 11:59:59 PM (Midnight)
                   </span>
                 </div>
                 <span className="text-[11px] font-bold text-amber-800 bg-amber-100/60 px-2.5 py-0.5 rounded-full">
@@ -811,8 +812,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
                     <p className="font-bold">Resubmission Notice</p>
                     <p className="text-[11px] text-amber-800 mt-0.5">
                       You previously submitted on{' '}
-                      {new Date(existingSub.submittedAt).toLocaleDateString()} at{' '}
-                      {new Date(existingSub.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.
+                      {formatDateTimeDDMMMYYYY(existingSub.submittedAt)}.
                       Submitting now will update your solution file.
                     </p>
                   </div>

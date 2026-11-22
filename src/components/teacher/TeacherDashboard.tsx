@@ -31,6 +31,7 @@ import {
   Filter,
 } from 'lucide-react';
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
+import { formatDateDDMMMYYYY } from '@/lib/dateUtils';
 
 interface TeacherDashboardProps {
   currentTab: string;
@@ -617,7 +618,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                             Total Marks: <strong className="text-slate-800">{asg.totalMarks}</strong>
                           </span>
                           <span>
-                            Deadline: <strong className="text-slate-800">{asg.deadlineDate} (11:59:59 PM)</strong>
+                            Deadline: <strong className="text-slate-800">{formatDateDDMMMYYYY(asg.deadlineDate)} (11:59:59 PM)</strong>
                           </span>
 
                           {asg.resourceFileName && (
