@@ -5,6 +5,7 @@ import { Assignment, Submission, UploadedFile } from '@/types';
 import { useToast } from '@/context/ToastContext';
 import { dataStore } from '@/lib/storage';
 import { computePeerPlagiarism, PlagiarismScanResult, tokenizeCode } from '@/lib/plagiarismEngine';
+import { getFileBlob, resolveFileUrl } from '@/lib/fileStorage';
 import {
   ChevronLeft,
   ChevronRight,
@@ -104,18 +105,37 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
   const activeEntry = activeSub ? classroomMap.get(activeSub.id) : null;
 
   const activeFile = activeSub?.files?.[0];
+  const [resolvedLocalUri, setResolvedLocalUri] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    if (activeFile?.dataUrl || activeFile?.url) {
+      setResolvedLocalUri(activeFile.dataUrl || activeFile.url || '');
+    } else if (activeFile?.fileKey) {
+      getFileBlob(activeFile.fileKey).then((blob) => {
+        if (isMounted) setResolvedLocalUri(blob || '');
+      });
+    } else {
+      setResolvedLocalUri('');
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [activeFile]);
+
   const activeFileNameLower = activeFile?.name?.toLowerCase() || '';
-  const activeFileUri = activeFile?.dataUrl || activeFile?.url || '';
+  const activeFileUri = activeFile?.dataUrl || activeFile?.url || resolvedLocalUri || '';
   const isPdf =
     activeFileNameLower.endsWith('.pdf') ||
-    activeFile?.dataUrl?.startsWith('data:application/pdf') ||
+    activeFileUri.startsWith('data:application/pdf') ||
+    activeFileUri.includes('/raw/upload/') ||
     false;
   const isImage =
     activeFileNameLower.endsWith('.png') ||
     activeFileNameLower.endsWith('.jpg') ||
     activeFileNameLower.endsWith('.jpeg') ||
     activeFileNameLower.endsWith('.webp') ||
-    activeFile?.dataUrl?.startsWith('data:image/') ||
+    activeFileUri.startsWith('data:image/') ||
     activeEntry?.documentKind === 'handwritten_scan' ||
     false;
 
@@ -335,12 +355,20 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
     try {
       const apiKey = typeof window !== 'undefined' ? localStorage.getItem('ggcp_gemini_api_key') || undefined : undefined;
 
-      const questionFilePayload = assignment.resourceFileContent
-        ? { name: assignment.resourceFileName || 'Question_Paper.pdf', dataUrl: assignment.resourceFileContent }
+      let questionData = assignment.resourceFileContent;
+      if (!questionData && assignment.resourceFileKey) {
+        questionData = (await getFileBlob(assignment.resourceFileKey)) || '';
+      }
+      const questionFilePayload = questionData
+        ? { name: assignment.resourceFileName || 'Question_Paper.pdf', dataUrl: questionData }
         : null;
 
+      let solutionData = entry.sub.files?.[0]?.dataUrl;
+      if (!solutionData && entry.sub.files?.[0]?.fileKey) {
+        solutionData = (await getFileBlob(entry.sub.files[0].fileKey)) || '';
+      }
       const solutionFilePayload = entry.sub.files?.[0]
-        ? { name: entry.sub.files[0].name, dataUrl: entry.sub.files[0].dataUrl, url: entry.sub.files[0].url }
+        ? { name: entry.sub.files[0].name, dataUrl: solutionData, url: entry.sub.files[0].url }
         : null;
 
       const res = await fetch('/api/evaluate-submission', {

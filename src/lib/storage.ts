@@ -7,6 +7,7 @@ import {
 } from './mockData';
 import { supabaseService } from './supabaseService';
 import { isSupabaseConfigured } from './supabaseClient';
+import { saveFileBlob, getFileBlob } from './fileStorage';
 
 const STORAGE_KEYS = {
   USERS: 'college_lms_users',
@@ -47,13 +48,104 @@ class LocalDataStore {
     }
   }
 
-  private set<T>(key: string, data: T): void {
+  /**
+   * Sanitizes a submission so heavy binary DataURLs are never written to localStorage.
+   * If on Cloudinary, strips dataUrl completely.
+   * If offline, ensures file is in IndexedDB and referenced by fileKey.
+   */
+  sanitizeSubmission(submission: Submission): Submission {
+    if (!submission) return submission;
+    return {
+      ...submission,
+      files: (submission.files || []).map((file, i) => {
+        const copy = { ...file };
+        if (copy.url) {
+          delete copy.dataUrl;
+        } else if (copy.dataUrl && copy.dataUrl.length > 20000) {
+          const fileKey = copy.fileKey || `file_sub_${submission.id}_${i}`;
+          saveFileBlob(fileKey, copy.dataUrl).catch(() => {});
+          copy.fileKey = fileKey;
+          delete copy.dataUrl;
+        }
+        return copy;
+      }),
+    };
+  }
+
+  /**
+   * Aggressively purges legacy multi-megabyte base64 strings from localStorage
+   * to guarantee the 5MB browser quota is never breached.
+   */
+  purgeHeavyDataUrls(): void {
     if (!this.isClient) return;
+    try {
+      // 1. Purge heavy submissions in localStorage
+      const rawSubs = localStorage.getItem(STORAGE_KEYS.SUBMISSIONS);
+      if (rawSubs) {
+        const parsed = JSON.parse(rawSubs);
+        if (Array.isArray(parsed)) {
+          const sanitized = parsed.map((s) => this.sanitizeSubmission(s));
+          localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(sanitized));
+        }
+      }
+
+      // 2. Purge heavy assignment question papers
+      const rawAsgs = localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS);
+      if (rawAsgs) {
+        const parsedAsgs = JSON.parse(rawAsgs);
+        if (Array.isArray(parsedAsgs)) {
+          const sanitizedAsgs = parsedAsgs.map((a: Assignment) => {
+            if (a.resourceFileContent && a.resourceFileContent.length > 50000) {
+              const asgKey = a.resourceFileKey || `asg_paper_${a.id}`;
+              saveFileBlob(asgKey, a.resourceFileContent).catch(() => {});
+              return { ...a, resourceFileKey: asgKey, resourceFileContent: '' };
+            }
+            return a;
+          });
+          localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(sanitizedAsgs));
+        }
+      }
+
+      // 3. Purge heavy sync queue payloads
+      const rawQueue = localStorage.getItem(STORAGE_KEYS.SYNC_QUEUE);
+      if (rawQueue) {
+        const parsedQueue = JSON.parse(rawQueue);
+        if (Array.isArray(parsedQueue)) {
+          const sanitizedQueue = parsedQueue.map((item: SyncQueueItem) => {
+            if (item.entity === 'submission' && item.payload) {
+              return { ...item, payload: this.sanitizeSubmission(item.payload) };
+            }
+            return item;
+          });
+          localStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(sanitizedQueue));
+        }
+      }
+    } catch (err) {
+      console.warn('[LMS Storage] Legacy storage purge warning:', err);
+    }
+  }
+
+  private set<T>(key: string, data: T): boolean {
+    if (!this.isClient) return false;
     try {
       localStorage.setItem(key, JSON.stringify(data));
       window.dispatchEvent(new Event('lms_storage_updated'));
-    } catch (err) {
-      console.error('Storage write error:', err);
+      return true;
+    } catch (err: any) {
+      console.warn(`[LMS Storage] Direct write warning for "${key}":`, err?.name || err);
+      // Auto-recover from quota exceeded
+      if (err?.name === 'QuotaExceededError' || err?.code === 22 || err?.code === 1014) {
+        try {
+          this.purgeHeavyDataUrls();
+          localStorage.setItem(key, JSON.stringify(data));
+          window.dispatchEvent(new Event('lms_storage_updated'));
+          return true;
+        } catch (retryErr) {
+          console.error('[LMS Storage] QuotaExceededError persistent after purge:', retryErr);
+          return false;
+        }
+      }
+      return false;
     }
   }
 
@@ -530,10 +622,17 @@ class LocalDataStore {
   }
 
   addAssignment(assignment: Assignment): void {
+    const cleanAsg = { ...assignment };
+    if (cleanAsg.resourceFileContent && cleanAsg.resourceFileContent.length > 50000) {
+      const asgKey = cleanAsg.resourceFileKey || `asg_paper_${cleanAsg.id}`;
+      saveFileBlob(asgKey, cleanAsg.resourceFileContent).catch(() => {});
+      cleanAsg.resourceFileKey = asgKey;
+      cleanAsg.resourceFileContent = '';
+    }
     const assignments = this.getAssignments();
-    assignments.unshift(assignment); // latest first
+    assignments.unshift(cleanAsg); // latest first
     this.saveAssignments(assignments);
-    this.enqueueSync('assignment', 'upsert', assignment);
+    this.enqueueSync('assignment', 'upsert', cleanAsg);
   }
 
   deleteAssignment(id: string): void {
@@ -557,18 +656,45 @@ class LocalDataStore {
     this.set(STORAGE_KEYS.SUBMISSIONS, submissions);
   }
 
-  upsertSubmission(submission: Submission): void {
+  upsertSubmission(submission: Submission): boolean {
+    const cleanSub = this.sanitizeSubmission(submission);
     const submissions = this.getSubmissions();
     const idx = submissions.findIndex(
-      (s) => s.assignmentId === submission.assignmentId && s.studentId === submission.studentId
+      (s) => s.assignmentId === cleanSub.assignmentId && s.studentId === cleanSub.studentId
     );
     if (idx >= 0) {
-      submissions[idx] = submission;
+      submissions[idx] = cleanSub;
     } else {
-      submissions.push(submission);
+      submissions.push(cleanSub);
     }
-    this.saveSubmissions(submissions);
-    this.enqueueSync('submission', 'upsert', submission);
+    const saved = this.set(STORAGE_KEYS.SUBMISSIONS, submissions);
+    this.enqueueSync('submission', 'upsert', cleanSub);
+    return saved;
+  }
+
+  async upsertSubmissionAsync(submission: Submission): Promise<boolean> {
+    // 1. Offload large file blobs to IndexedDB if they don't have a remote URL
+    if (submission.files && submission.files.length > 0) {
+      for (let i = 0; i < submission.files.length; i++) {
+        const file = submission.files[i];
+        if (!file.url && file.dataUrl) {
+          const fileKey = file.fileKey || `file_sub_${submission.id}_${i}`;
+          await saveFileBlob(fileKey, file.dataUrl);
+          file.fileKey = fileKey;
+          delete file.dataUrl;
+        }
+      }
+    }
+
+    // 2. Upsert sanitized submission into local storage
+    const saved = this.upsertSubmission(submission);
+
+    // 3. Immediately sync lightweight submission to Supabase
+    if (isSupabaseConfigured) {
+      supabaseService.upsertSubmission(this.sanitizeSubmission(submission)).catch(() => {});
+    }
+
+    return saved;
   }
 
   // Reset all to fresh defaults (Explicit Admin Action)

@@ -7,6 +7,7 @@ import { dataStore } from '@/lib/storage';
 import { Assignment, Submission, UploadedFile } from '@/types';
 import { uploadFileToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinaryService';
 import { formatDateDDMMMYYYY, formatDateTimeDDMMMYYYY } from '@/lib/dateUtils';
+import { saveFileBlob } from '@/lib/fileStorage';
 import {
   FileText,
   UploadCloud,
@@ -155,7 +156,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (uploadedFiles.length === 0) {
       setSubmissionError('Please attach your solution document (PDF or Word) before submitting.');
       showWarning('File Required', 'Attach your completed assignment file.');
@@ -170,55 +171,95 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
       return;
     }
 
-    const submissionPayload: Submission = {
-      id: existingSub?.id || `sub-${Date.now()}`,
-      assignmentId: assignment.id,
-      studentId: currentUser.id,
-      studentName: currentUser.name,
-      studentRollNumber: currentUser.rollNumber || 1,
-      studentSemester: currentUser.semester || assignment.semester,
-      studentSection: currentUser.section || 'A1',
-      textSubmission: '',
-      files: uploadedFiles,
-      submittedAt: new Date().toISOString(),
-      status: 'submitted',
-      aiSuggestedScore: undefined,
-      integrityReport: {
-        peerPlagiarismScore: 0,
-        aiLikelihoodScore: 0,
-        aiReasoning: `Document submission: ${uploadedFiles[0]?.name}`,
-        telemetry: {
-          typedCharacterCount: 0,
-          pasteEventCount: 0,
-          totalPastedCharacters: 0,
-          typingDurationSeconds: 0,
-          estimatedWPM: 0,
-          suspiciousBurstDetected: false,
-          timelineLogs: ['Document uploaded directly in official PDF/Word format.'],
-        },
-      },
-    };
-
-    dataStore.upsertSubmission(submissionPayload);
+    setIsProcessing(true);
+    setSubmissionError(null);
 
     try {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
-    } catch {
-      // Ignored if confetti fails
+      const fileItem = { ...uploadedFiles[0] };
+      const subId = existingSub?.id || `sub-${Date.now()}`;
+
+      // 1. Cloud upload if configured and URL not yet obtained
+      if (isCloudinaryConfigured() && !fileItem.url && fileItem.dataUrl) {
+        try {
+          const cloudRes = await uploadFileToCloudinary(fileItem.dataUrl, fileItem.name);
+          if (cloudRes?.url && cloudRes.isCloudinary) {
+            fileItem.url = cloudRes.url;
+            delete fileItem.dataUrl; // Release multi-MB string from memory & storage
+          }
+        } catch (cloudErr) {
+          console.warn('Cloudinary upload warning:', cloudErr);
+        }
+      }
+
+      // 2. Local IndexedDB offload if no remote URL
+      if (!fileItem.url && fileItem.dataUrl) {
+        const fileKey = `file_${subId}_0`;
+        await saveFileBlob(fileKey, fileItem.dataUrl);
+        fileItem.fileKey = fileKey;
+        delete fileItem.dataUrl; // Strip from localStorage payload to never exceed 5MB quota
+      }
+
+      const submissionPayload: Submission = {
+        id: subId,
+        assignmentId: assignment.id,
+        studentId: currentUser.id,
+        studentName: currentUser.name,
+        studentRollNumber: currentUser.rollNumber || 1,
+        studentSemester: currentUser.semester || assignment.semester,
+        studentSection: currentUser.section || 'A1',
+        textSubmission: '',
+        files: [fileItem],
+        submittedAt: new Date().toISOString(),
+        status: 'submitted',
+        aiSuggestedScore: undefined,
+        integrityReport: {
+          peerPlagiarismScore: 0,
+          aiLikelihoodScore: 0,
+          aiReasoning: `Document submission: ${fileItem.name}`,
+          telemetry: {
+            typedCharacterCount: 0,
+            pasteEventCount: 0,
+            totalPastedCharacters: 0,
+            typingDurationSeconds: 0,
+            estimatedWPM: 0,
+            suspiciousBurstDetected: false,
+            timelineLogs: ['Document uploaded directly in official PDF/Word format.'],
+          },
+        },
+      };
+
+      // 3. Save to local storage with verified persistence
+      const saved = await dataStore.upsertSubmissionAsync(submissionPayload);
+      if (!saved) {
+        throw new Error('Could not persist submission to local storage. Please try again.');
+      }
+
+      // 4. Trigger celebration & feedback only on verified save
+      try {
+        confetti({
+          particleCount: 100,
+          spread: 70,
+          origin: { y: 0.6 },
+        });
+      } catch {
+        // Ignored if confetti fails
+      }
+
+      showSuccess(
+        'Assignment Submitted',
+        existingSub
+          ? 'Your updated solution document has been submitted successfully.'
+          : 'Your assignment solution has been submitted successfully.'
+      );
+
+      onClose();
+    } catch (err: any) {
+      console.error('Submission execution error:', err);
+      setSubmissionError(err?.message || 'Could not complete submission. Please try again.');
+      showError('Submission Error', 'Failed to save submission.');
+    } finally {
+      setIsProcessing(false);
     }
-
-    showSuccess(
-      'Assignment Submitted',
-      existingSub
-        ? 'Your updated solution document has been submitted successfully.'
-        : 'Your assignment solution has been submitted successfully.'
-    );
-
-    onClose();
   };
 
   const attachedFile = uploadedFiles[0];

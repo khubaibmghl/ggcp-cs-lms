@@ -32,6 +32,7 @@ import {
   Play,
 } from 'lucide-react';
 import { TeacherGradingWorkspace } from './TeacherGradingWorkspace';
+import { getFileBlob, resolveFileUrl } from '@/lib/fileStorage';
 
 interface TeacherSubmissionsModalProps {
   assignment: Assignment;
@@ -197,8 +198,11 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
     setWorkspaceOpen(true);
   };
 
-  const handleDownloadStudentFile = (file: UploadedFile) => {
-    const data = file.dataUrl || file.url;
+  const handleDownloadStudentFile = async (file: UploadedFile) => {
+    let data = file.dataUrl || file.url;
+    if (!data && file.fileKey) {
+      data = (await getFileBlob(file.fileKey)) || '';
+    }
     if (!data) return;
 
     if (data.startsWith('data:')) {
@@ -325,17 +329,25 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
     setEvaluatingSubId(sub.id);
     setEvaluatingSub(sub);
     try {
-      const questionFilePayload = assignment.resourceFileContent
+      let questionData = assignment.resourceFileContent;
+      if (!questionData && assignment.resourceFileKey) {
+        questionData = (await getFileBlob(assignment.resourceFileKey)) || '';
+      }
+      const questionFilePayload = questionData
         ? {
             name: assignment.resourceFileName || 'Question_Paper.pdf',
-            dataUrl: assignment.resourceFileContent,
+            dataUrl: questionData,
           }
         : null;
 
+      let solutionData = sub.files?.[0]?.dataUrl;
+      if (!solutionData && sub.files?.[0]?.fileKey) {
+        solutionData = (await getFileBlob(sub.files[0].fileKey)) || '';
+      }
       const solutionFilePayload = sub.files?.[0]
         ? {
             name: sub.files[0].name,
-            dataUrl: sub.files[0].dataUrl,
+            dataUrl: solutionData,
             url: sub.files[0].url,
           }
         : null;

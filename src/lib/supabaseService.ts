@@ -111,7 +111,7 @@ function mapAssignmentToDb(a: Assignment): any {
     test_cases: a.testCases || [],
     ai_rubric: a.aiRubric || [],
     resource_file_name: a.resourceFileName || null,
-    resource_file_content: a.resourceFileContent || null,
+    resource_file_content: a.resourceFileContent && a.resourceFileContent.length < 50000 ? a.resourceFileContent : null,
     created_at: a.createdAt,
   };
 }
@@ -152,6 +152,15 @@ function mapDbSubmission(row: any): Submission {
 }
 
 function mapSubmissionToDb(s: Submission): any {
+  const sanitizedFiles = (s.files || []).map((f) => {
+    const copy = { ...f };
+    // Never send multi-megabyte base64 strings to Supabase REST payload
+    if (copy.dataUrl && copy.dataUrl.length > 20000) {
+      delete copy.dataUrl;
+    }
+    return copy;
+  });
+
   return {
     id: s.id,
     assignment_id: s.assignmentId,
@@ -161,7 +170,7 @@ function mapSubmissionToDb(s: Submission): any {
     student_semester: s.studentSemester,
     student_section: s.studentSection,
     text_submission: s.textSubmission || null,
-    files: s.files || [],
+    files: sanitizedFiles,
     submitted_at: s.submittedAt,
     status: s.status,
     marks: s.score != null ? s.score : null,

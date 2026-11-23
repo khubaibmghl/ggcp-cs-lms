@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
 import { formatDateDDMMMYYYY } from '@/lib/dateUtils';
+import { getFileBlob } from '@/lib/fileStorage';
 
 interface TeacherDashboardProps {
   currentTab: string;
@@ -624,10 +625,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                           {asg.resourceFileName && (
                             <button
                               type="button"
-                              onClick={() => {
-                                if (!asg.resourceFileContent) return;
+                              onClick={async () => {
+                                let src = asg.resourceFileContent;
+                                if (!src && asg.resourceFileKey) {
+                                  src = (await getFileBlob(asg.resourceFileKey)) || '';
+                                }
+                                if (!src) return;
                                 const a = document.createElement('a');
-                                a.href = asg.resourceFileContent;
+                                a.href = src;
                                 a.download = asg.resourceFileName || 'Assignment_Questions.pdf';
                                 document.body.appendChild(a);
                                 a.click();

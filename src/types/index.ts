@@ -81,6 +81,7 @@ export interface Assignment {
   aiRubric?: RubricCriterion[];
   resourceFileName?: string;
   resourceFileContent?: string;
+  resourceFileKey?: string;
   createdAt: string;
 }
 
@@ -112,6 +113,7 @@ export interface UploadedFile {
   type: string;
   dataUrl?: string;
   url?: string;
+  fileKey?: string;
   extractedText?: string;
 }
 

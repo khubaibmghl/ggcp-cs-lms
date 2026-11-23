@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { StudentSubmissionWizard } from './StudentSubmissionWizard';
 import { formatDateDDMMMYYYY, formatDateTimeDDMMMYYYY } from '@/lib/dateUtils';
+import { getFileBlob, downloadUploadedFile } from '@/lib/fileStorage';
 
 interface StudentDashboardProps {
   currentTab: string;
@@ -105,10 +106,14 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentTab }
       : 'N/A';
 
   // Helper to download resource question paper
-  const handleDownloadPaper = (asg: Assignment) => {
-    if (!asg.resourceFileContent) return;
+  const handleDownloadPaper = async (asg: Assignment) => {
+    let src = asg.resourceFileContent;
+    if (!src && asg.resourceFileKey) {
+      src = (await getFileBlob(asg.resourceFileKey)) || '';
+    }
+    if (!src) return;
     const link = document.createElement('a');
-    link.href = asg.resourceFileContent;
+    link.href = src;
     link.download = asg.resourceFileName || `${asg.subjectCode}_Assignment.pdf`;
     document.body.appendChild(link);
     link.click();
@@ -564,17 +569,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentTab }
                           {file ? (
                             <button
                               type="button"
-                              onClick={() => {
-                                const dl = file.dataUrl || file.url;
-                                if (!dl) return;
-                                const link = document.createElement('a');
-                                link.href = dl;
-                                link.download = file.name;
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs transition"
+                              onClick={() => downloadUploadedFile(file, `${asg?.subjectCode || 'Assignment'}_Solution.pdf`)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 font-semibold text-xs transition cursor-pointer"
                               title="Download submitted file"
                             >
                               <FileText className="w-3.5 h-3.5 text-purple-600" />
