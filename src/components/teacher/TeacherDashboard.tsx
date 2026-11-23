@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
 import { formatDateDDMMMYYYY } from '@/lib/dateUtils';
-import { getFileBlob } from '@/lib/fileStorage';
+import { getFileBlob, downloadFileUrl } from '@/lib/fileStorage';
 
 interface TeacherDashboardProps {
   currentTab: string;
@@ -633,12 +633,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                                   src = (await getFileBlob(asg.resourceFileKey)) || '';
                                 }
                                 if (!src) return;
-                                const a = document.createElement('a');
-                                a.href = src;
-                                a.download = asg.resourceFileName || 'Assignment_Questions.pdf';
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
+                                const fileName = asg.resourceFileName || 'Assignment_Questions.pdf';
+                                await downloadFileUrl(src, fileName);
                               }}
                               className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-purple-700 hover:bg-purple-50 text-[11px] font-bold transition"
                               title="Download Question Paper"

@@ -158,22 +158,15 @@ export function resolveSyncFileUrl(file?: UploadedFile | null): string {
 
 /**
  * Universal file downloader that handles dataUrls, Cloudinary remote URLs, and IndexedDB blobs.
+ * Enforces correct original filename and extension across all cross-origin downloads.
  */
-export async function downloadUploadedFile(file: UploadedFile, fallbackName = 'solution_document.pdf'): Promise<void> {
-  if (!file) return;
+export async function downloadFileUrl(src: string, fileName: string): Promise<void> {
+  if (!src) return;
 
-  const resolved = await resolveFileUrl(file);
-  const fileName = file.name || fallbackName;
-
-  if (!resolved) {
-    alert('The attached file data is no longer available on this device.');
-    return;
-  }
-
-  // Base64 Data URL or Object URL
-  if (resolved.startsWith('data:') || resolved.startsWith('blob:')) {
+  // 1. Base64 Data URL or local Object URL
+  if (src.startsWith('data:') || src.startsWith('blob:')) {
     const a = document.createElement('a');
-    a.href = resolved;
+    a.href = src;
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
@@ -181,12 +174,65 @@ export async function downloadUploadedFile(file: UploadedFile, fallbackName = 's
     return;
   }
 
-  // Remote URL (Cloudinary)
-  const a = document.createElement('a');
-  a.href = resolved;
-  a.target = '_blank';
-  a.download = fileName;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  // 2. Remote URL (e.g. Cloudinary):
+  // Modern browsers ignore the `download` attribute on cross-origin URLs.
+  // Converting it to a same-origin blob guarantees the browser enforces the exact filename & extension!
+  try {
+    const response = await fetch(src);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    return;
+  } catch (err) {
+    console.warn('[LMS File Vault] Direct blob fetch failed, falling back to direct navigation:', err);
+    let fallbackUrl = src;
+    if (fallbackUrl.includes('cloudinary.com') && fallbackUrl.includes('/upload/')) {
+      const cleanName = encodeURIComponent(fileName);
+      fallbackUrl = fallbackUrl.replace('/upload/', `/upload/fl_attachment:${cleanName}/`);
+    }
+    const a = document.createElement('a');
+    a.href = fallbackUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+}
+
+/**
+ * Universal file downloader that handles dataUrls, Cloudinary remote URLs, and IndexedDB blobs.
+ * Enforces correct original filename and extension across all cross-origin downloads.
+ */
+export async function downloadUploadedFile(file: UploadedFile, fallbackName = 'solution_document.pdf'): Promise<void> {
+  if (!file) return;
+
+  const resolved = await resolveFileUrl(file);
+  let fileName = file.name || fallbackName;
+
+  const isWord = file.type?.includes('word') || file.type?.includes('officedocument') || file.type?.includes('msword') || fileName.endsWith('.docx') || fileName.endsWith('.doc');
+
+  // Ensure fileName has proper extension
+  if (!fileName.includes('.')) {
+    fileName += isWord ? '.docx' : '.pdf';
+  } else if (isWord && fileName.toLowerCase().endsWith('.pdf')) {
+    fileName = fileName.replace(/\.pdf$/i, '.docx');
+  }
+
+  if (!resolved) {
+    alert('The attached file data is no longer available on this device.');
+    return;
+  }
+
+  await downloadFileUrl(resolved, fileName);
 }

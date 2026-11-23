@@ -32,7 +32,7 @@ import {
   Play,
 } from 'lucide-react';
 import { TeacherGradingWorkspace } from './TeacherGradingWorkspace';
-import { getFileBlob, resolveFileUrl } from '@/lib/fileStorage';
+import { getFileBlob, resolveFileUrl, downloadUploadedFile } from '@/lib/fileStorage';
 
 interface TeacherSubmissionsModalProps {
   assignment: Assignment;
@@ -199,37 +199,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   };
 
   const handleDownloadStudentFile = async (file: UploadedFile) => {
-    let data = file.dataUrl || file.url;
-    if (!data && file.fileKey) {
-      data = (await getFileBlob(file.fileKey)) || '';
-    }
-    if (!data) return;
-
-    if (data.startsWith('data:')) {
-      const a = document.createElement('a');
-      a.href = data;
-      a.download = file.name || 'assignment_solution.pdf';
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      return;
-    }
-
-    // Handle Cloudinary delivery URLs directly
-    let downloadUrl = data;
-    // For Cloudinary image uploads, adding fl_attachment guarantees direct browser download without 404
-    if (downloadUrl.includes('cloudinary.com') && downloadUrl.includes('/image/upload/') && !downloadUrl.includes('/fl_attachment/')) {
-      downloadUrl = downloadUrl.replace('/image/upload/', '/image/upload/fl_attachment/');
-    }
-
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.download = file.name || 'assignment_solution.pdf';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    await downloadUploadedFile(file, 'assignment_solution.pdf');
   };
 
   const handleSaveGrade = () => {

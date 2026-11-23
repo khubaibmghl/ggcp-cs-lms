@@ -26,7 +26,7 @@ import {
 } from 'lucide-react';
 import { StudentSubmissionWizard } from './StudentSubmissionWizard';
 import { formatDateDDMMMYYYY, formatDateTimeDDMMMYYYY } from '@/lib/dateUtils';
-import { getFileBlob, downloadUploadedFile } from '@/lib/fileStorage';
+import { getFileBlob, downloadUploadedFile, downloadFileUrl } from '@/lib/fileStorage';
 
 interface StudentDashboardProps {
   currentTab: string;
@@ -112,12 +112,8 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentTab }
       src = (await getFileBlob(asg.resourceFileKey)) || '';
     }
     if (!src) return;
-    const link = document.createElement('a');
-    link.href = src;
-    link.download = asg.resourceFileName || `${asg.subjectCode}_Assignment.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const fileName = asg.resourceFileName || `${asg.subjectCode}_Assignment.pdf`;
+    await downloadFileUrl(src, fileName);
   };
 
   // =========================================================================

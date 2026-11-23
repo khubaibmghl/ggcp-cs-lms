@@ -55,6 +55,9 @@ export async function uploadFileToCloudinary(
     formData.append('file', fileDataUrl);
     formData.append('upload_preset', uploadPreset);
     formData.append('folder', 'ggcp_lms/submissions');
+    formData.append('use_filename', 'true');
+    formData.append('unique_filename', 'false');
+    formData.append('filename_override', fileName);
 
     const res = await fetch(endpoint, {
       method: 'POST',
