@@ -7,7 +7,7 @@ import {
 } from './mockData';
 import { supabaseService } from './supabaseService';
 import { isSupabaseConfigured } from './supabaseClient';
-import { saveFileBlob, getFileBlob } from './fileStorage';
+import { saveFileBlob, getFileBlob, deleteFileBlob } from './fileStorage';
 
 const STORAGE_KEYS = {
   USERS: 'college_lms_users',
@@ -18,6 +18,7 @@ const STORAGE_KEYS = {
   SYNC_QUEUE: 'college_lms_sync_queue',
   CURRICULUM_VERSION: 'college_lms_curriculum_version',
   DELETED_USER_IDS: 'college_lms_deleted_user_ids',
+  DELETED_ASSIGNMENT_IDS: 'college_lms_deleted_assignment_ids',
 };
 
 export interface SyncQueueItem {
@@ -417,16 +418,20 @@ class LocalDataStore {
         }
       }
 
-      // Assignments: Reconcile and merge (purge any sample assignments from cloud too)
+      // Assignments: Reconcile and merge (purge any sample assignments or deleted assignments from cloud)
       if (cloudAssignments && cloudAssignments.length > 0) {
-        const cleanCloudAsgs = cloudAssignments.filter((a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id));
+        const cleanCloudAsgs = cloudAssignments.filter(
+          (a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id) && !this.isAssignmentDeleted(a.id)
+        );
         for (const a of cloudAssignments) {
-          if (SAMPLE_ASSIGNMENT_IDS.has(a.id)) {
+          if (SAMPLE_ASSIGNMENT_IDS.has(a.id) || this.isAssignmentDeleted(a.id)) {
             supabaseService.deleteAssignment(a.id).catch(() => {});
           }
         }
 
-        const localAsgs = this.getAssignments().filter((a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id));
+        const localAsgs = this.getAssignments().filter(
+          (a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id) && !this.isAssignmentDeleted(a.id)
+        );
         const mergedAsgs = [...cleanCloudAsgs];
         for (const la of localAsgs) {
           if (!mergedAsgs.some((ca) => ca.id === la.id)) {
@@ -437,19 +442,29 @@ class LocalDataStore {
         this.set(STORAGE_KEYS.ASSIGNMENTS, mergedAsgs);
       }
 
-      // Submissions: Reconcile and merge (purge any sample submissions from cloud too)
+      // Submissions: Reconcile and merge (purge sample submissions & submissions of deleted assignments)
       if (cloudSubmissions && cloudSubmissions.length > 0) {
         const cleanCloudSubs = cloudSubmissions.filter(
-          (s) => !SAMPLE_SUBMISSION_IDS.has(s.id) && !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId)
+          (s) =>
+            !SAMPLE_SUBMISSION_IDS.has(s.id) &&
+            !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId) &&
+            !this.isAssignmentDeleted(s.assignmentId)
         );
         for (const s of cloudSubmissions) {
-          if (SAMPLE_SUBMISSION_IDS.has(s.id) || SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId)) {
+          if (
+            SAMPLE_SUBMISSION_IDS.has(s.id) ||
+            SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId) ||
+            this.isAssignmentDeleted(s.assignmentId)
+          ) {
             supabaseService.deleteSubmission(s.id).catch(() => {});
           }
         }
 
         const localSubs = this.getSubmissions().filter(
-          (s) => !SAMPLE_SUBMISSION_IDS.has(s.id) && !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId)
+          (s) =>
+            !SAMPLE_SUBMISSION_IDS.has(s.id) &&
+            !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId) &&
+            !this.isAssignmentDeleted(s.assignmentId)
         );
         const mergedSubs = [...cleanCloudSubs];
         for (const ls of localSubs) {
@@ -513,6 +528,23 @@ class LocalDataStore {
       if (deleted.has(classKey)) return true;
     }
     return false;
+  }
+
+  getDeletedAssignmentIds(): string[] {
+    return this.get<string[]>(STORAGE_KEYS.DELETED_ASSIGNMENT_IDS, []);
+  }
+
+  addDeletedAssignmentId(id: string): void {
+    if (!this.isClient || !id) return;
+    const current = new Set(this.getDeletedAssignmentIds().map((s) => String(s)));
+    current.add(String(id));
+    this.set(STORAGE_KEYS.DELETED_ASSIGNMENT_IDS, Array.from(current));
+  }
+
+  isAssignmentDeleted(id?: string): boolean {
+    if (!id) return false;
+    const deleted = new Set(this.getDeletedAssignmentIds().map((s) => String(s)));
+    return deleted.has(String(id));
   }
 
   deleteUser(id: string): void {
@@ -636,15 +668,39 @@ class LocalDataStore {
   }
 
   deleteAssignment(id: string): void {
+    // 1. Record tombstone immediately to permanently block resurrection from cloud sync
+    this.addDeletedAssignmentId(id);
+
+    // 2. Remove assignment locally
     const assignments = this.getAssignments().filter((a) => a.id !== id);
     this.saveAssignments(assignments);
-    const submissions = this.getSubmissions().filter((s) => s.assignmentId !== id);
-    this.saveSubmissions(submissions);
 
-    this.enqueueSync('assignment', 'delete', { id });
-    for (const sub of submissions) {
+    // 3. Separate doomed submissions from remaining submissions
+    const doomedSubmissions = this.getSubmissions().filter((s) => s.assignmentId === id);
+    const remainingSubmissions = this.getSubmissions().filter((s) => s.assignmentId !== id);
+    this.saveSubmissions(remainingSubmissions);
+
+    // 4. Clean up any local IndexedDB files
+    deleteFileBlob(`asg_paper_${id}`).catch(() => {});
+    for (const sub of doomedSubmissions) {
+      if (sub.files) {
+        sub.files.forEach((_, idx) => deleteFileBlob(`file_sub_${sub.id}_${idx}`).catch(() => {}));
+      }
+    }
+
+    // 5. Enqueue sync in foreign-key safe order (submissions first, then assignment)
+    for (const sub of doomedSubmissions) {
       this.enqueueSync('submission', 'delete', { id: sub.id });
     }
+    this.enqueueSync('assignment', 'delete', { id });
+  }
+
+  async deleteAssignmentAsync(id: string): Promise<boolean> {
+    this.deleteAssignment(id);
+    if (isSupabaseConfigured) {
+      return await supabaseService.deleteAssignment(id);
+    }
+    return true;
   }
 
   // --- Submissions ---

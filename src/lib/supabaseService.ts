@@ -308,9 +308,16 @@ export const supabaseService = {
   async deleteAssignment(id: string): Promise<boolean> {
     if (!isSupabaseConfigured || !supabase) return false;
     try {
+      // 1. Delete associated submissions first to satisfy PostgreSQL foreign key constraints
+      await supabase.from('submissions').delete().eq('assignment_id', id);
+      // 2. Delete the assignment record
       const { error } = await supabase.from('assignments').delete().eq('id', id);
+      if (error) {
+        console.warn('[Supabase] deleteAssignment warning:', error);
+      }
       return !error;
-    } catch {
+    } catch (err) {
+      console.error('[Supabase] deleteAssignment exception:', err);
       return false;
     }
   },

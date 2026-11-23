@@ -29,6 +29,7 @@ import {
   Check,
   Search,
   Filter,
+  Loader2,
 } from 'lucide-react';
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
 import { formatDateDDMMMYYYY } from '@/lib/dateUtils';
@@ -47,6 +48,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   const [wizardError, setWizardError] = useState<string | null>(null);
   const [activeAssignmentForReview, setActiveAssignmentForReview] = useState<Assignment | null>(null);
   const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
+  const [isDeletingAssignment, setIsDeletingAssignment] = useState(false);
   const [copiedAsgId, setCopiedAsgId] = useState<string | null>(null);
 
   // --- Wizard Form State (3 Steps) ---
@@ -979,17 +981,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
               <button
                 type="button"
-                onClick={() => {
-                  dataStore.deleteAssignment(assignmentToDelete.id);
-                  setAssignments(dataStore.getAssignments());
-                  setSubmissions(dataStore.getSubmissions());
-                  setAssignmentToDelete(null);
-                  showSuccess('Assignment and student submissions deleted successfully.');
+                disabled={isDeletingAssignment}
+                onClick={async () => {
+                  setIsDeletingAssignment(true);
+                  try {
+                    await dataStore.deleteAssignmentAsync(assignmentToDelete.id);
+                    setAssignments(dataStore.getAssignments());
+                    setSubmissions(dataStore.getSubmissions());
+                    setAssignmentToDelete(null);
+                    showSuccess('Assignment and all linked submissions permanently deleted.');
+                  } catch (err) {
+                    console.error('Delete assignment error:', err);
+                    dataStore.deleteAssignment(assignmentToDelete.id);
+                    setAssignments(dataStore.getAssignments());
+                    setSubmissions(dataStore.getSubmissions());
+                    setAssignmentToDelete(null);
+                    showSuccess('Assignment deleted locally.');
+                  } finally {
+                    setIsDeletingAssignment(false);
+                  }
                 }}
-                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-extrabold text-xs shadow-md shadow-rose-950/20 transition flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-extrabold text-xs shadow-md shadow-rose-950/20 transition flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
               >
-                <Trash2 className="w-3.5 h-3.5" />
-                Yes, Delete Assignment
+                {isDeletingAssignment ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Yes, Delete Assignment</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
