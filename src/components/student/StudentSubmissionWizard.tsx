@@ -7,7 +7,7 @@ import { dataStore } from '@/lib/storage';
 import { Assignment, Submission, UploadedFile } from '@/types';
 import { uploadFileToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinaryService';
 import { formatDateDDMMMYYYY, formatDateTimeDDMMMYYYY } from '@/lib/dateUtils';
-import { saveFileBlob } from '@/lib/fileStorage';
+import { saveFileBlob, getFileBlob } from '@/lib/fileStorage';
 import {
   FileText,
   UploadCloud,
@@ -96,29 +96,35 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
         reader.readAsDataURL(file);
       });
 
+      // 2. Immediately vault file data into IndexedDB so multi-MB strings NEVER stay in React state or localStorage
+      const tempKey = `file_staging_${Date.now()}`;
+      await saveFileBlob(tempKey, dataUrl);
+
       const processedFile: UploadedFile = {
         name: file.name,
         size: file.size,
         type: file.type || (fileNameLower.endsWith('.pdf') ? 'application/pdf' : 'application/msword'),
-        dataUrl,
+        fileKey: tempKey,
       };
 
-      // 2. Cloud storage sync if configured
+      // 3. Cloud storage sync if configured (upload to Cloudinary)
       if (isCloudinaryConfigured()) {
         try {
           const cloudRes = await uploadFileToCloudinary(dataUrl, file.name);
-          processedFile.url = cloudRes.url;
+          if (cloudRes?.isCloudinary && cloudRes?.url) {
+            processedFile.url = cloudRes.url;
+          }
         } catch {
-          // Continue with local dataUrl
+          // Cloud upload deferred to submission
         }
       }
 
-      // 3. Pre-flight text extraction for AI assessment engine
+      // 4. Pre-flight text extraction for AI assessment engine
       try {
         const extractRes = await fetch('/api/extract-text', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ file: processedFile }),
+          body: JSON.stringify({ file: { name: processedFile.name, type: processedFile.type, dataUrl } }),
         });
         if (extractRes.ok) {
           const json = await extractRes.json();
@@ -177,27 +183,34 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
     try {
       const fileItem = { ...uploadedFiles[0] };
       const subId = existingSub?.id || `sub-${Date.now()}`;
+      const finalFileKey = `file_${subId}_0`;
 
-      // 1. Cloud upload if configured and URL not yet obtained
-      if (isCloudinaryConfigured() && !fileItem.url && fileItem.dataUrl) {
+      // 1. Retrieve the file's data from IndexedDB or memory vault if needed
+      let rawData = fileItem.dataUrl;
+      if (!rawData && fileItem.fileKey) {
+        rawData = (await getFileBlob(fileItem.fileKey)) || '';
+      }
+
+      // Ensure file is vaulted in IndexedDB under the permanent submission key
+      if (rawData) {
+        await saveFileBlob(finalFileKey, rawData);
+        fileItem.fileKey = finalFileKey;
+      }
+
+      // 2. Cloud upload if configured and remote URL not yet obtained
+      if (isCloudinaryConfigured() && (!fileItem.url || !fileItem.url.startsWith('http')) && rawData) {
         try {
-          const cloudRes = await uploadFileToCloudinary(fileItem.dataUrl, fileItem.name);
-          if (cloudRes?.url && cloudRes.isCloudinary) {
+          const cloudRes = await uploadFileToCloudinary(rawData, fileItem.name);
+          if (cloudRes?.isCloudinary && cloudRes?.url) {
             fileItem.url = cloudRes.url;
-            delete fileItem.dataUrl; // Release multi-MB string from memory & storage
           }
         } catch (cloudErr) {
           console.warn('Cloudinary upload warning:', cloudErr);
         }
       }
 
-      // 2. Local IndexedDB offload if no remote URL
-      if (!fileItem.url && fileItem.dataUrl) {
-        const fileKey = `file_${subId}_0`;
-        await saveFileBlob(fileKey, fileItem.dataUrl);
-        fileItem.fileKey = fileKey;
-        delete fileItem.dataUrl; // Strip from localStorage payload to never exceed 5MB quota
-      }
+      // CRITICAL: Strip any dataUrl completely so the submission payload is strictly lightweight (<1KB)
+      delete fileItem.dataUrl;
 
       const submissionPayload: Submission = {
         id: subId,
@@ -228,7 +241,7 @@ export const StudentSubmissionWizard: React.FC<StudentSubmissionWizardProps> = (
         },
       };
 
-      // 3. Save to local storage with verified persistence
+      // 3. Save to storage with verified persistence
       const saved = await dataStore.upsertSubmissionAsync(submissionPayload);
       if (!saved) {
         throw new Error('Could not persist submission to local storage. Please try again.');

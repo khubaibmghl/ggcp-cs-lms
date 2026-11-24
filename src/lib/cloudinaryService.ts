@@ -28,11 +28,11 @@ export async function uploadFileToCloudinary(
   const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET;
 
   // Fallback: If Cloudinary keys are not yet provided in Vercel/.env,
-  // keep the optimized local dataUrl so the LMS works seamlessly without errors.
+  // do not return a multi-megabyte dataUrl as url; return empty url so local storage stays lightweight.
   if (!cloudName || !uploadPreset) {
     const approxBytes = Math.round((fileDataUrl.length * 3) / 4);
     return {
-      url: fileDataUrl,
+      url: '',
       bytes: approxBytes,
       isCloudinary: false,
     };
@@ -55,9 +55,6 @@ export async function uploadFileToCloudinary(
     formData.append('file', fileDataUrl);
     formData.append('upload_preset', uploadPreset);
     formData.append('folder', 'ggcp_lms/submissions');
-    formData.append('use_filename', 'true');
-    formData.append('unique_filename', 'false');
-    formData.append('filename_override', fileName);
 
     const res = await fetch(endpoint, {
       method: 'POST',
@@ -67,10 +64,10 @@ export async function uploadFileToCloudinary(
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
       console.warn('Cloudinary upload warning:', errJson);
-      // Fallback to dataUrl on API error
+      // Fallback: Return empty url so callers know cloud upload didn't succeed and use IndexedDB
       const approxBytes = Math.round((fileDataUrl.length * 3) / 4);
       return {
-        url: fileDataUrl,
+        url: '',
         bytes: approxBytes,
         isCloudinary: false,
       };
@@ -88,7 +85,7 @@ export async function uploadFileToCloudinary(
     console.warn('Cloudinary upload network error, using local fallback:', err);
     const approxBytes = Math.round((fileDataUrl.length * 3) / 4);
     return {
-      url: fileDataUrl,
+      url: '',
       bytes: approxBytes,
       isCloudinary: false,
     };

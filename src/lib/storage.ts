@@ -60,9 +60,18 @@ class LocalDataStore {
       ...submission,
       files: (submission.files || []).map((file, i) => {
         const copy = { ...file };
-        if (copy.url) {
+        // If file.url is a data URL (not a real http url), move to IndexedDB
+        if (copy.url && copy.url.startsWith('data:')) {
+          const fileKey = copy.fileKey || `file_sub_${submission.id}_${i}`;
+          saveFileBlob(fileKey, copy.url).catch(() => {});
+          copy.fileKey = fileKey;
+          copy.url = '';
+        }
+        // If file has a remote http URL, discard dataUrl
+        if (copy.url && copy.url.startsWith('http')) {
           delete copy.dataUrl;
-        } else if (copy.dataUrl && copy.dataUrl.length > 20000) {
+        } else if (copy.dataUrl) {
+          // If file has raw dataUrl, move to IndexedDB and delete from localStorage payload
           const fileKey = copy.fileKey || `file_sub_${submission.id}_${i}`;
           saveFileBlob(fileKey, copy.dataUrl).catch(() => {});
           copy.fileKey = fileKey;
@@ -80,17 +89,21 @@ class LocalDataStore {
   purgeHeavyDataUrls(): void {
     if (!this.isClient) return;
     try {
-      // 1. Purge heavy submissions in localStorage
+      // 1. Clear bloated sync queue first to free up immediate space
+      localStorage.removeItem(STORAGE_KEYS.SYNC_QUEUE);
+
+      // 2. Purge heavy submissions in localStorage
       const rawSubs = localStorage.getItem(STORAGE_KEYS.SUBMISSIONS);
       if (rawSubs) {
         const parsed = JSON.parse(rawSubs);
         if (Array.isArray(parsed)) {
           const sanitized = parsed.map((s) => this.sanitizeSubmission(s));
+          localStorage.removeItem(STORAGE_KEYS.SUBMISSIONS);
           localStorage.setItem(STORAGE_KEYS.SUBMISSIONS, JSON.stringify(sanitized));
         }
       }
 
-      // 2. Purge heavy assignment question papers
+      // 3. Purge heavy assignment question papers
       const rawAsgs = localStorage.getItem(STORAGE_KEYS.ASSIGNMENTS);
       if (rawAsgs) {
         const parsedAsgs = JSON.parse(rawAsgs);
@@ -103,22 +116,8 @@ class LocalDataStore {
             }
             return a;
           });
+          localStorage.removeItem(STORAGE_KEYS.ASSIGNMENTS);
           localStorage.setItem(STORAGE_KEYS.ASSIGNMENTS, JSON.stringify(sanitizedAsgs));
-        }
-      }
-
-      // 3. Purge heavy sync queue payloads
-      const rawQueue = localStorage.getItem(STORAGE_KEYS.SYNC_QUEUE);
-      if (rawQueue) {
-        const parsedQueue = JSON.parse(rawQueue);
-        if (Array.isArray(parsedQueue)) {
-          const sanitizedQueue = parsedQueue.map((item: SyncQueueItem) => {
-            if (item.entity === 'submission' && item.payload) {
-              return { ...item, payload: this.sanitizeSubmission(item.payload) };
-            }
-            return item;
-          });
-          localStorage.setItem(STORAGE_KEYS.SYNC_QUEUE, JSON.stringify(sanitizedQueue));
         }
       }
     } catch (err) {
@@ -135,9 +134,16 @@ class LocalDataStore {
     } catch (err: any) {
       console.warn(`[LMS Storage] Direct write warning for "${key}":`, err?.name || err);
       // Auto-recover from quota exceeded
-      if (err?.name === 'QuotaExceededError' || err?.code === 22 || err?.code === 1014) {
+      const isQuota =
+        err?.name === 'QuotaExceededError' ||
+        err?.code === 22 ||
+        err?.code === 1014 ||
+        String(err).toLowerCase().includes('quota');
+
+      if (isQuota) {
         try {
           this.purgeHeavyDataUrls();
+          localStorage.removeItem(key);
           localStorage.setItem(key, JSON.stringify(data));
           window.dispatchEvent(new Event('lms_storage_updated'));
           return true;
@@ -444,12 +450,14 @@ class LocalDataStore {
 
       // Submissions: Reconcile and merge (purge sample submissions & submissions of deleted assignments)
       if (cloudSubmissions && cloudSubmissions.length > 0) {
-        const cleanCloudSubs = cloudSubmissions.filter(
-          (s) =>
-            !SAMPLE_SUBMISSION_IDS.has(s.id) &&
-            !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId) &&
-            !this.isAssignmentDeleted(s.assignmentId)
-        );
+        const cleanCloudSubs = cloudSubmissions
+          .filter(
+            (s) =>
+              !SAMPLE_SUBMISSION_IDS.has(s.id) &&
+              !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId) &&
+              !this.isAssignmentDeleted(s.assignmentId)
+          )
+          .map((s) => this.sanitizeSubmission(s));
         for (const s of cloudSubmissions) {
           if (
             SAMPLE_SUBMISSION_IDS.has(s.id) ||
@@ -460,12 +468,14 @@ class LocalDataStore {
           }
         }
 
-        const localSubs = this.getSubmissions().filter(
-          (s) =>
-            !SAMPLE_SUBMISSION_IDS.has(s.id) &&
-            !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId) &&
-            !this.isAssignmentDeleted(s.assignmentId)
-        );
+        const localSubs = this.getSubmissions()
+          .filter(
+            (s) =>
+              !SAMPLE_SUBMISSION_IDS.has(s.id) &&
+              !SAMPLE_ASSIGNMENT_IDS.has(s.assignmentId) &&
+              !this.isAssignmentDeleted(s.assignmentId)
+          )
+          .map((s) => this.sanitizeSubmission(s));
         const mergedSubs = [...cleanCloudSubs];
         for (const ls of localSubs) {
           if (!mergedSubs.some((cs) => cs.id === ls.id)) {
@@ -729,28 +739,46 @@ class LocalDataStore {
   }
 
   async upsertSubmissionAsync(submission: Submission): Promise<boolean> {
-    // 1. Offload large file blobs to IndexedDB if they don't have a remote URL
+    // 1. Offload large file blobs to IndexedDB and ensure clean payload
     if (submission.files && submission.files.length > 0) {
       for (let i = 0; i < submission.files.length; i++) {
         const file = submission.files[i];
-        if (!file.url && file.dataUrl) {
+        if (file.dataUrl) {
           const fileKey = file.fileKey || `file_sub_${submission.id}_${i}`;
           await saveFileBlob(fileKey, file.dataUrl);
           file.fileKey = fileKey;
           delete file.dataUrl;
         }
+        if (file.url && file.url.startsWith('data:')) {
+          const fileKey = file.fileKey || `file_sub_${submission.id}_${i}`;
+          await saveFileBlob(fileKey, file.url);
+          file.fileKey = fileKey;
+          file.url = '';
+        }
       }
     }
 
     // 2. Upsert sanitized submission into local storage
-    const saved = this.upsertSubmission(submission);
+    let saved = this.upsertSubmission(submission);
 
-    // 3. Immediately sync lightweight submission to Supabase
-    if (isSupabaseConfigured) {
-      supabaseService.upsertSubmission(this.sanitizeSubmission(submission)).catch(() => {});
+    // If initial local storage save failed due to historical device quota, purge and retry
+    if (!saved) {
+      this.purgeHeavyDataUrls();
+      saved = this.upsertSubmission(submission);
     }
 
-    return saved;
+    // 3. Immediately sync lightweight submission to Supabase cloud
+    let cloudSynced = false;
+    if (isSupabaseConfigured) {
+      try {
+        cloudSynced = await supabaseService.upsertSubmission(this.sanitizeSubmission(submission));
+      } catch {
+        cloudSynced = false;
+      }
+    }
+
+    // Submission is confirmed if saved to localStorage OR safely synced to Supabase
+    return saved || cloudSynced;
   }
 
   // Reset all to fresh defaults (Explicit Admin Action)
