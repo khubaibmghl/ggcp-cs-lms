@@ -30,9 +30,11 @@ import {
   HelpCircle,
   Image as ImageIcon,
   Play,
+  RefreshCw,
 } from 'lucide-react';
 import { TeacherGradingWorkspace } from './TeacherGradingWorkspace';
 import { getFileBlob, resolveFileUrl, downloadUploadedFile } from '@/lib/fileStorage';
+import { supabaseService } from '@/lib/supabaseService';
 
 interface TeacherSubmissionsModalProps {
   assignment: Assignment;
@@ -86,8 +88,59 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceStartIndex, setWorkspaceStartIndex] = useState(0);
   const [dataVersion, setDataVersion] = useState(0);
+  const [isCloudRefreshing, setIsCloudRefreshing] = useState(false);
+  const [cloudLoaded, setCloudLoaded] = useState(false);
 
-  const allSubmissions = dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id);
+  // Read local store initial submissions
+  const [localSubmissions, setLocalSubmissions] = useState<Submission[]>(() =>
+    dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id)
+  );
+
+  // Direct cloud fetching: When modal opens or refresh is clicked, fetch live from Supabase
+  const refreshSubmissionsFromCloud = async (isManual = false) => {
+    setIsCloudRefreshing(true);
+    try {
+      const cloudSubs = await supabaseService.fetchSubmissions();
+      if (cloudSubs && Array.isArray(cloudSubs)) {
+        // Filter specifically for this assignment
+        const asgSubs = cloudSubs.filter((s) => s.assignmentId === assignment.id);
+        if (asgSubs.length > 0 || isManual) {
+          // Reconcile and save into dataStore so other components also benefit
+          const allCurrent = dataStore.getSubmissions().filter((s) => s.assignmentId !== assignment.id);
+          dataStore.saveSubmissions([...allCurrent, ...asgSubs]);
+          setLocalSubmissions(asgSubs);
+          setCloudLoaded(true);
+          if (isManual) {
+            showSuccess(
+              'Submissions Synced',
+              `Successfully fetched ${asgSubs.length} live submissions from cloud database.`
+            );
+          }
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[TeacherSubmissionsModal] Cloud fetch warning:', err);
+    } finally {
+      setIsCloudRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    // Initial fetch from cloud immediately when modal opens
+    refreshSubmissionsFromCloud(false);
+
+    // Listen for storage updates
+    const handleStorage = () => {
+      setLocalSubmissions(
+        dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id)
+      );
+    };
+    window.addEventListener('lms_storage_updated', handleStorage);
+    return () => window.removeEventListener('lms_storage_updated', handleStorage);
+  }, [assignment.id, dataVersion]);
+
+  const allSubmissions = localSubmissions;
 
   // Filter submissions by target section
   const filteredSubmissions =
@@ -202,7 +255,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
     await downloadUploadedFile(file, 'assignment_solution.pdf');
   };
 
-  const handleSaveGrade = () => {
+  const handleSaveGrade = async () => {
     if (!selectedSubmission) return;
     const finalScore = gradingScore === '' ? 0 : Number(gradingScore);
     const updated: Submission = {
@@ -211,8 +264,9 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       score: finalScore,
       teacherFeedback: gradingFeedback.trim(),
     };
-    dataStore.upsertSubmission(updated);
+    await dataStore.upsertSubmissionAsync(updated);
     setSelectedSubmission(null);
+    showSuccess('Grade Saved', `Recorded ${finalScore}/${assignment.totalMarks} marks.`);
   };
 
   // --- 1. REAL PEER PLAGIARISM CHECKER ---
@@ -449,6 +503,18 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               Missing:{' '}
               <strong className="text-rose-600">{missingStudents.length}</strong>
             </span>
+
+            {/* Refresh Live Submissions from Supabase Cloud */}
+            <button
+              type="button"
+              disabled={isCloudRefreshing}
+              onClick={() => refreshSubmissionsFromCloud(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-300 text-xs font-bold transition shadow-2xs disabled:opacity-60"
+              title="Sync latest student submissions directly from PostgreSQL cloud database"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-purple-700 ${isCloudRefreshing ? 'animate-spin' : ''}`} />
+              <span>{isCloudRefreshing ? 'Syncing...' : 'Sync Cloud'}</span>
+            </button>
 
             {/* Export Official Award List (CSV) */}
             <button

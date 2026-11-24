@@ -34,6 +34,7 @@ import {
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
 import { formatDateDDMMMYYYY } from '@/lib/dateUtils';
 import { getFileBlob, downloadFileUrl } from '@/lib/fileStorage';
+import { supabaseService } from '@/lib/supabaseService';
 
 interface TeacherDashboardProps {
   currentTab: string;
@@ -105,6 +106,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
   useEffect(() => {
     loadData();
+
+    // Actively fetch live submissions & assignments from Supabase to ensure real-time accuracy
+    const fetchLatestCloudData = async () => {
+      try {
+        const [cloudAsgs, cloudSubs] = await Promise.all([
+          supabaseService.fetchAssignments(),
+          supabaseService.fetchSubmissions(),
+        ]);
+
+        if (cloudSubs && Array.isArray(cloudSubs)) {
+          const cleanSubs = cloudSubs.filter((s) => !dataStore.isAssignmentDeleted(s.assignmentId));
+          setSubmissions(cleanSubs);
+          dataStore.saveSubmissions(cleanSubs);
+        }
+
+        if (cloudAsgs && Array.isArray(cloudAsgs)) {
+          const cleanAsgs = cloudAsgs.filter((a) => !dataStore.isAssignmentDeleted(a.id));
+          setAssignments(cleanAsgs);
+          dataStore.saveAssignments(cleanAsgs);
+        }
+      } catch (err) {
+        console.warn('[TeacherDashboard] Live cloud data fetch warning:', err);
+      }
+    };
+
+    fetchLatestCloudData();
+
     const handleUpdate = () => loadData();
     window.addEventListener('lms_storage_updated', handleUpdate);
     return () => window.removeEventListener('lms_storage_updated', handleUpdate);

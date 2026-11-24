@@ -460,7 +460,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       },
     };
 
-    dataStore.upsertSubmission(updated);
+    await dataStore.upsertSubmissionAsync(updated);
     addLog(`💾 Saved Grade for Roll #${activeSub.studentRollNumber}: ${scoreNum}/${assignment.totalMarks} Marks.`, 'success');
     showSuccess(
       'Grade Recorded',
