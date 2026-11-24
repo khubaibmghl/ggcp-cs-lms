@@ -306,11 +306,28 @@ export const supabaseService = {
   },
 
   async deleteAssignment(id: string): Promise<boolean> {
-    if (!isSupabaseConfigured || !supabase) return false;
+    if (!isSupabaseConfigured) return false;
+
+    // 1. Authoritative server-side deletion via API route (bypasses browser client quirks)
     try {
-      // 1. Delete associated submissions first to satisfy PostgreSQL foreign key constraints
+      const res = await fetch('/api/teacher/delete-assignment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assignmentId: id }),
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success) return true;
+      }
+    } catch {
+      // Fallback to direct client-side Supabase delete
+    }
+
+    if (!supabase) return false;
+    try {
+      // 2. Delete associated submissions first to satisfy PostgreSQL foreign key constraints
       await supabase.from('submissions').delete().eq('assignment_id', id);
-      // 2. Delete the assignment record
+      // 3. Delete the assignment record
       const { error } = await supabase.from('assignments').delete().eq('id', id);
       if (error) {
         console.warn('[Supabase] deleteAssignment warning:', error);

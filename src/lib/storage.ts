@@ -435,14 +435,22 @@ class LocalDataStore {
           }
         }
 
+        const pendingAsgUpsertIds = new Set(
+          this.getSyncQueue()
+            .filter((item) => item.entity === 'assignment' && item.action === 'upsert')
+            .map((item) => item.id)
+        );
+
         const localAsgs = this.getAssignments().filter(
           (a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id) && !this.isAssignmentDeleted(a.id)
         );
         const mergedAsgs = [...cleanCloudAsgs];
         for (const la of localAsgs) {
-          if (!mergedAsgs.some((ca) => ca.id === la.id)) {
+          const inCloud = mergedAsgs.some((ca) => ca.id === la.id);
+          // ONLY preserve local assignment if it is legitimately in the cloud OR pending offline creation!
+          // NEVER resurrect an assignment that was deleted from the cloud!
+          if (!inCloud && pendingAsgUpsertIds.has(la.id)) {
             mergedAsgs.push(la);
-            this.enqueueSync('assignment', 'upsert', la);
           }
         }
         this.set(STORAGE_KEYS.ASSIGNMENTS, mergedAsgs);
@@ -468,6 +476,12 @@ class LocalDataStore {
           }
         }
 
+        const pendingSubUpsertIds = new Set(
+          this.getSyncQueue()
+            .filter((item) => item.entity === 'submission' && item.action === 'upsert')
+            .map((item) => item.id)
+        );
+
         const localSubs = this.getSubmissions()
           .filter(
             (s) =>
@@ -478,9 +492,10 @@ class LocalDataStore {
           .map((s) => this.sanitizeSubmission(s));
         const mergedSubs = [...cleanCloudSubs];
         for (const ls of localSubs) {
-          if (!mergedSubs.some((cs) => cs.id === ls.id)) {
+          const inCloud = mergedSubs.some((cs) => cs.id === ls.id);
+          // ONLY preserve local submission if it is legitimately in cloud OR pending offline submission!
+          if (!inCloud && pendingSubUpsertIds.has(ls.id)) {
             mergedSubs.push(ls);
-            this.enqueueSync('submission', 'upsert', ls);
           }
         }
         this.set(STORAGE_KEYS.SUBMISSIONS, mergedSubs);
@@ -656,7 +671,8 @@ class LocalDataStore {
 
   // --- Assignments ---
   getAssignments(): Assignment[] {
-    return this.get<Assignment[]>(STORAGE_KEYS.ASSIGNMENTS, INITIAL_ASSIGNMENTS);
+    return this.get<Assignment[]>(STORAGE_KEYS.ASSIGNMENTS, INITIAL_ASSIGNMENTS)
+      .filter((a) => !SAMPLE_ASSIGNMENT_IDS.has(a.id) && !this.isAssignmentDeleted(a.id));
   }
 
   saveAssignments(assignments: Assignment[]): void {
@@ -698,7 +714,16 @@ class LocalDataStore {
       }
     }
 
-    // 5. Enqueue sync in foreign-key safe order (submissions first, then assignment)
+    // 5. Purge any pending upsert actions for this assignment or its submissions from sync queue
+    const doomedSubIds = new Set(doomedSubmissions.map((s) => s.id));
+    const cleanQueue = this.getSyncQueue().filter(
+      (item) =>
+        !(item.entity === 'assignment' && item.id === id) &&
+        !(item.entity === 'submission' && doomedSubIds.has(item.id))
+    );
+    this.saveSyncQueue(cleanQueue);
+
+    // 6. Enqueue sync in foreign-key safe order (submissions first, then assignment)
     for (const sub of doomedSubmissions) {
       this.enqueueSync('submission', 'delete', { id: sub.id });
     }
@@ -715,7 +740,8 @@ class LocalDataStore {
 
   // --- Submissions ---
   getSubmissions(): Submission[] {
-    return this.get<Submission[]>(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS);
+    return this.get<Submission[]>(STORAGE_KEYS.SUBMISSIONS, INITIAL_SUBMISSIONS)
+      .filter((s) => !SAMPLE_SUBMISSION_IDS.has(s.id) && !this.isAssignmentDeleted(s.assignmentId));
   }
 
   saveSubmissions(submissions: Submission[]): void {
