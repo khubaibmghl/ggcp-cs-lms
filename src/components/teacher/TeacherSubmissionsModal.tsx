@@ -34,6 +34,10 @@ import {
   Megaphone,
   Check,
   Loader2,
+  AlertCircle,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { TeacherGradingWorkspace } from './TeacherGradingWorkspace';
 import { getFileBlob, resolveFileUrl, downloadUploadedFile } from '@/lib/fileStorage';
@@ -54,6 +58,8 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const { showSuccess, showError } = useToast();
   const [selectedSection, setSelectedSection] = useState<'All' | Section>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [submissionSort, setSubmissionSort] = useState<'roll-asc' | 'roll-desc' | 'time-desc' | 'graded-first'>('roll-asc');
+  const [missingSort, setMissingSort] = useState<'roll-asc' | 'roll-desc'>('roll-asc');
   const [selectedSubmission, setSelectedSubmission] = useState<Submission | null>(null);
   const [gradingScore, setGradingScore] = useState<number | string>('');
   const [gradingFeedback, setGradingFeedback] = useState<string>('');
@@ -95,6 +101,19 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [dataVersion, setDataVersion] = useState(0);
   const [currentAsg, setCurrentAsg] = useState<Assignment>(assignment);
   const [isAnnouncingResult, setIsAnnouncingResult] = useState(false);
+  const [announcementModal, setAnnouncementModal] = useState<{
+    isOpen: boolean;
+    status: 'confirm' | 'incomplete' | 'no_submissions';
+    totalSubmissions: number;
+    gradedSubmissions: number;
+    pendingCount: number;
+  }>({
+    isOpen: false,
+    status: 'confirm',
+    totalSubmissions: 0,
+    gradedSubmissions: 0,
+    pendingCount: 0,
+  });
   // Start with initialSubmissions if provided (e.g. from Dashboard's 171 fetched submissions),
   // or fall back to dataStore, while cloud refresh executes.
   const [localSubmissions, setLocalSubmissions] = useState<Submission[]>(() => {
@@ -209,15 +228,33 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       : allSubmissions.filter((s) => (s.studentSection || '').trim().toLowerCase() === selectedSection.toLowerCase());
 
   // Filter submissions by live search query (name or roll number)
-  const displayedSubmissions = filteredSubmissions.filter((sub) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase().trim();
-    return (
-      (sub.studentName || '').toLowerCase().includes(q) ||
-      String(sub.studentRollNumber || '').includes(q) ||
-      (sub.studentSection || '').toLowerCase().includes(q)
-    );
-  });
+  const displayedSubmissions = filteredSubmissions
+    .filter((sub) => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase().trim();
+      return (
+        (sub.studentName || '').toLowerCase().includes(q) ||
+        String(sub.studentRollNumber || '').includes(q) ||
+        (sub.studentSection || '').toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      if (submissionSort === 'roll-asc') {
+        return (Number(a.studentRollNumber) || 0) - (Number(b.studentRollNumber) || 0);
+      }
+      if (submissionSort === 'roll-desc') {
+        return (Number(b.studentRollNumber) || 0) - (Number(a.studentRollNumber) || 0);
+      }
+      if (submissionSort === 'time-desc') {
+        return new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime();
+      }
+      if (submissionSort === 'graded-first') {
+        if (a.status === 'graded' && b.status !== 'graded') return -1;
+        if (b.status === 'graded' && a.status !== 'graded') return 1;
+        return (Number(a.studentRollNumber) || 0) - (Number(b.studentRollNumber) || 0);
+      }
+      return 0;
+    });
 
   // Filter all students registered for this semester & section
   const sectionStudents = users.filter((u) => {
@@ -230,18 +267,25 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
   // Calculate missing students strictly within the selected scope:
   // Check both studentId and (section + rollNumber) to avoid cross-section roll number collision!
-  const missingStudents = sectionStudents.filter((st) => {
-    const hasSubmitted = filteredSubmissions.some((sub) => {
-      // 1. Match by unique user/student ID
-      if (sub.studentId && st.id && sub.studentId === st.id) return true;
-      // 2. Match by exact roll number AND section
-      const rollMatch = Number(sub.studentRollNumber) === Number(st.rollNumber);
-      const secMatch =
-        (sub.studentSection || '').trim().toLowerCase() === (st.section || '').trim().toLowerCase();
-      return rollMatch && secMatch;
+  const missingStudents = sectionStudents
+    .filter((st) => {
+      const hasSubmitted = filteredSubmissions.some((sub) => {
+        // 1. Match by unique user/student ID
+        if (sub.studentId && st.id && sub.studentId === st.id) return true;
+        // 2. Match by exact roll number AND section
+        const rollMatch = Number(sub.studentRollNumber) === Number(st.rollNumber);
+        const secMatch =
+          (sub.studentSection || '').trim().toLowerCase() === (st.section || '').trim().toLowerCase();
+        return rollMatch && secMatch;
+      });
+      return !hasSubmitted;
+    })
+    .sort((a, b) => {
+      if (missingSort === 'roll-desc') {
+        return (Number(b.rollNumber) || 0) - (Number(a.rollNumber) || 0);
+      }
+      return (Number(a.rollNumber) || 0) - (Number(b.rollNumber) || 0);
     });
-    return !hasSubmitted;
-  });
 
   // Export official marks award list CSV formatted for College Examination Gazettes
   const handleExportAwardListCsv = () => {
@@ -598,56 +642,42 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
             ) : (
               <button
                 type="button"
-                disabled={isAnnouncingResult}
-                onClick={async () => {
+                onClick={() => {
                   if (allSubmissions.length === 0) {
-                    showError('No Submissions', 'No student submissions recorded yet to announce results.');
+                    setAnnouncementModal({
+                      isOpen: true,
+                      status: 'no_submissions',
+                      totalSubmissions: 0,
+                      gradedSubmissions: 0,
+                      pendingCount: 0,
+                    });
                     return;
                   }
+                  const gradedSubs = allSubmissions.filter((s) => s.status === 'graded');
                   const unGraded = allSubmissions.filter((s) => s.status !== 'graded');
                   if (unGraded.length > 0) {
-                    showError(
-                      'Grading Incomplete',
-                      `${unGraded.length} student submission${unGraded.length > 1 ? 's are' : ' is'} pending evaluation. Please grade all submissions before announcing results.`
-                    );
+                    setAnnouncementModal({
+                      isOpen: true,
+                      status: 'incomplete',
+                      totalSubmissions: allSubmissions.length,
+                      gradedSubmissions: gradedSubs.length,
+                      pendingCount: unGraded.length,
+                    });
                     return;
                   }
-                  setIsAnnouncingResult(true);
-                  try {
-                    const updatedAsg: Assignment = {
-                      ...currentAsg,
-                      isResultAnnounced: true,
-                      resultAnnouncedAt: new Date().toISOString(),
-                    };
-                    const currentAsgs = dataStore.getAssignments().map((a) => (a.id === currentAsg.id ? updatedAsg : a));
-                    dataStore.saveAssignments(currentAsgs);
-                    setCurrentAsg(updatedAsg);
-                    await supabaseService.upsertAssignment(updatedAsg);
-                    showSuccess(
-                      'Result Announced!',
-                      `Official results announced! All ${allSubmissions.length} students can now view their marks and remarks in their portal.`
-                    );
-                  } catch (err) {
-                    console.error('Error announcing results:', err);
-                    showError('Announcement Error', 'Could not sync result announcement to cloud.');
-                  } finally {
-                    setIsAnnouncingResult(false);
-                  }
+                  setAnnouncementModal({
+                    isOpen: true,
+                    status: 'confirm',
+                    totalSubmissions: allSubmissions.length,
+                    gradedSubmissions: gradedSubs.length,
+                    pendingCount: 0,
+                  });
                 }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-extrabold transition shadow-2xs cursor-pointer disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-extrabold transition shadow-2xs cursor-pointer"
                 title="Release grades to student portals once all students are evaluated"
               >
-                {isAnnouncingResult ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700" />
-                    <span>Announcing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Megaphone className="w-3.5 h-3.5 text-amber-700" />
-                    <span>Announce Result</span>
-                  </>
-                )}
+                <Megaphone className="w-3.5 h-3.5 text-amber-700" />
+                <span>Announce Result</span>
               </button>
             )}
 
@@ -761,10 +791,62 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
         <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
           {/* Left Column: Submissions Table (2 cols width) */}
           <div className="lg:col-span-2 p-6 space-y-4">
-            <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-              <FileCode className="w-4 h-4 text-purple-700" />
-              Student Submissions ({searchQuery.trim() ? `${displayedSubmissions.length} of ${filteredSubmissions.length}` : filteredSubmissions.length})
-            </h3>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                <FileCode className="w-4 h-4 text-purple-700" />
+                Student Submissions ({searchQuery.trim() ? `${displayedSubmissions.length} of ${filteredSubmissions.length}` : filteredSubmissions.length})
+              </h3>
+
+              {/* Submissions Sorting Controls */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-[11px] text-slate-500 font-bold">Sort:</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSubmissionSort((prev) => (prev === 'roll-asc' ? 'roll-desc' : 'roll-asc'))
+                  }
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${
+                    submissionSort.startsWith('roll')
+                      ? 'bg-purple-100 text-purple-900 border-purple-300'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Toggle Roll Number Sort Order"
+                >
+                  <ArrowUpDown className="w-3 h-3 text-purple-600" />
+                  <span>Roll #{submissionSort === 'roll-desc' ? ' (Desc)' : ' (Asc)'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSubmissionSort((prev) => (prev === 'graded-first' ? 'roll-asc' : 'graded-first'))
+                  }
+                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${
+                    submissionSort === 'graded-first'
+                      ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Show Graded students first"
+                >
+                  Graded First
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSubmissionSort((prev) => (prev === 'time-desc' ? 'roll-asc' : 'time-desc'))
+                  }
+                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${
+                    submissionSort === 'time-desc'
+                      ? 'bg-purple-100 text-purple-900 border-purple-300'
+                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                  }`}
+                  title="Latest submissions first"
+                >
+                  Latest
+                </button>
+              </div>
+            </div>
 
             {isCloudRefreshing && !cloudLoaded ? (
               <div className="p-10 flex flex-col items-center justify-center gap-3 bg-purple-50/60 rounded-2xl border border-dashed border-purple-200">
@@ -910,15 +992,42 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                           </button>
                         </div>
 
-                        {/* 4. GRADE & REVIEW SUBMISSION BUTTON */}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenGrading(sub)}
-                          className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1"
-                        >
-                          <Award className="w-3.5 h-3.5" />
-                          Grade & Review
-                        </button>
+                        {/* 4. GRADE & REVIEW / RE-GRADE SUBMISSION BUTTON */}
+                        {sub.status === 'graded' ? (
+                          <div className="flex items-center gap-2">
+                            <div className="text-right">
+                              <span className="text-[10px] text-slate-400 font-bold block uppercase tracking-wide">Awarded</span>
+                              <span className="font-mono text-xs font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                {sub.score} / {assignment.totalMarks}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedSubmission(sub);
+                                setGradingScore(sub.score !== undefined ? sub.score : '');
+                                setGradingFeedback(sub.teacherFeedback || '');
+                              }}
+                              className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition"
+                              title="Edit Marks or Critique"
+                            >
+                              Edit Grade
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedSubmission(sub);
+                              setGradingScore(sub.score !== undefined ? sub.score : '');
+                              setGradingFeedback(sub.teacherFeedback || '');
+                            }}
+                            className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5"
+                          >
+                            <Award className="w-3.5 h-3.5" />
+                            Grade &amp; Review
+                          </button>
+                        )}
                       </div>
                     </div>
                   );
@@ -929,14 +1038,31 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
           {/* Right Column: Missing Roll Numbers Roster */}
           <div className="p-6 bg-slate-50/60 space-y-4">
-            <div>
-              <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                <Users className="w-4 h-4 text-rose-600" />
-                Missing Submissions Roster ({missingStudents.length})
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-0.5">
-                Students registered in this section who have NOT submitted this assignment.
-              </p>
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-rose-600" />
+                  Missing Submissions Roster ({missingStudents.length})
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Students registered in this section who have NOT submitted this assignment.
+                </p>
+              </div>
+
+              {/* Missing Roster Sort Toggle */}
+              {missingStudents.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMissingSort((prev) => (prev === 'roll-asc' ? 'roll-desc' : 'roll-asc'))
+                  }
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 text-[11px] font-bold transition flex-shrink-0"
+                  title="Toggle Roll Number Sorting"
+                >
+                  <ArrowUpDown className="w-3 h-3 text-rose-600" />
+                  <span>#{missingSort === 'roll-desc' ? ' (Desc)' : ' (Asc)'}</span>
+                </button>
+              )}
             </div>
 
             {missingStudents.length === 0 ? (
@@ -1631,6 +1757,153 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
             onClose={() => setWorkspaceOpen(false)}
             onUpdated={() => setDataVersion((v) => v + 1)}
           />
+        )}
+
+        {/* --- CUSTOMIZED ANNOUNCEMENT VERIFICATION & ERROR DIALOG --- */}
+        {announcementModal.isOpen && (
+          <div className="fixed inset-0 z-90 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+            <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
+              {/* Header Icon based on status */}
+              {announcementModal.status === 'confirm' && (
+                <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
+                  <Megaphone className="w-7 h-7" />
+                </div>
+              )}
+              {announcementModal.status === 'incomplete' && (
+                <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+                  <AlertCircle className="w-7 h-7" />
+                </div>
+              )}
+              {announcementModal.status === 'no_submissions' && (
+                <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto shadow-inner">
+                  <Users className="w-7 h-7" />
+                </div>
+              )}
+
+              {/* Dialog Content */}
+              <div className="text-center space-y-2">
+                <span className="font-mono text-[11px] font-extrabold uppercase tracking-wider text-purple-700 bg-purple-100 px-3 py-1 rounded-full">
+                  {currentAsg.subjectCode} — Semester {currentAsg.semester}
+                </span>
+                <h3 className="text-lg font-black text-slate-900 pt-1">
+                  {announcementModal.status === 'confirm' && 'Verify & Announce Official Results?'}
+                  {announcementModal.status === 'incomplete' && 'Cannot Announce Results: Incomplete Grading'}
+                  {announcementModal.status === 'no_submissions' && 'No Student Submissions Received'}
+                </h3>
+                <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto">
+                  {announcementModal.status === 'confirm' && (
+                    <>
+                      You are about to release official scores and feedback for{' '}
+                      <strong className="text-slate-900">&ldquo;{currentAsg.title}&rdquo;</strong>.
+                      Once announced, all students will instantly see their marks and remarks in their portal.
+                    </>
+                  )}
+                  {announcementModal.status === 'incomplete' && (
+                    <>
+                      College examination policy requires <strong>100% of student submissions to be graded</strong> before marks can be released.
+                      Please evaluate the remaining pending submissions first.
+                    </>
+                  )}
+                  {announcementModal.status === 'no_submissions' && (
+                    <>
+                      No students have submitted solutions for <strong className="text-slate-900">&ldquo;{currentAsg.title}&rdquo;</strong> yet.
+                      Results can only be announced once student work has been submitted and graded.
+                    </>
+                  )}
+                </p>
+              </div>
+
+              {/* Evaluation Statistics Breakdown */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Submitted</span>
+                  <span className="text-base font-black text-slate-900">{announcementModal.totalSubmissions}</span>
+                </div>
+                <div className={`p-2.5 rounded-xl border ${announcementModal.pendingCount > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                  <span className="text-[10px] font-bold block uppercase text-slate-500">Graded</span>
+                  <span className={`text-base font-black ${announcementModal.pendingCount > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                    {announcementModal.gradedSubmissions} / {announcementModal.totalSubmissions}
+                  </span>
+                </div>
+                <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                  <span className="text-[10px] text-slate-400 font-bold block uppercase">Pending</span>
+                  <span className={`text-base font-black ${announcementModal.pendingCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                    {announcementModal.pendingCount}
+                  </span>
+                </div>
+              </div>
+
+              {/* Bottom Actions */}
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setAnnouncementModal((prev) => ({ ...prev, isOpen: false }))}
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition cursor-pointer"
+                >
+                  {announcementModal.status === 'incomplete' ? 'Close' : 'Cancel'}
+                </button>
+
+                {announcementModal.status === 'confirm' && (
+                  <button
+                    type="button"
+                    disabled={isAnnouncingResult}
+                    onClick={async () => {
+                      setIsAnnouncingResult(true);
+                      try {
+                        const updatedAsg: Assignment = {
+                          ...currentAsg,
+                          isResultAnnounced: true,
+                          resultAnnouncedAt: new Date().toISOString(),
+                        };
+                        const currentAsgs = dataStore.getAssignments().map((a) => (a.id === currentAsg.id ? updatedAsg : a));
+                        dataStore.saveAssignments(currentAsgs);
+                        setCurrentAsg(updatedAsg);
+                        await supabaseService.upsertAssignment(updatedAsg);
+                        setAnnouncementModal((prev) => ({ ...prev, isOpen: false }));
+                        showSuccess(
+                          'Result Announced!',
+                          `Official results announced! All ${allSubmissions.length} students can now view their marks and remarks in their portal.`
+                        );
+                      } catch (err) {
+                        console.error('Error announcing results:', err);
+                        showError('Announcement Error', 'Could not sync result announcement to cloud.');
+                      } finally {
+                        setIsAnnouncingResult(false);
+                      }
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-extrabold text-xs shadow-md shadow-amber-900/20 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {isAnnouncingResult ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Releasing Results...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Megaphone className="w-3.5 h-3.5" />
+                        <span>Confirm &amp; Announce</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {announcementModal.status === 'incomplete' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAnnouncementModal((prev) => ({ ...prev, isOpen: false }));
+                      setWorkspaceStartIndex(0);
+                      setWorkspaceOpen(true);
+                    }}
+                    className="flex-1 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md shadow-purple-900/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-white" />
+                    <span>Grade in Theater</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         )}
       </div>
     </div>
