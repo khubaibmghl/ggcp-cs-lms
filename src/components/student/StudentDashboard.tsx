@@ -27,6 +27,7 @@ import {
 import { StudentSubmissionWizard } from './StudentSubmissionWizard';
 import { formatDateDDMMMYYYY, formatDateTimeDDMMMYYYY } from '@/lib/dateUtils';
 import { getFileBlob, downloadUploadedFile, downloadFileUrl } from '@/lib/fileStorage';
+import { supabaseService } from '@/lib/supabaseService';
 
 interface StudentDashboardProps {
   currentTab: string;
@@ -34,9 +35,11 @@ interface StudentDashboardProps {
 
 export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentTab }) => {
   const { currentUser } = useAuth();
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
+  // SWR Pattern: Load cached data instantly (0ms) so student UI never flickers,
+  // then seamlessly revalidate live from Supabase PostgreSQL in the background.
+  const [assignments, setAssignments] = useState<Assignment[]>(() => dataStore.getAssignments());
+  const [submissions, setSubmissions] = useState<Submission[]>(() => dataStore.getSubmissions());
+  const [subjects, setSubjects] = useState<Subject[]>(() => dataStore.getSubjects());
   const [activeAssignmentToSubmit, setActiveAssignmentToSubmit] = useState<Assignment | null>(null);
 
   // Dedicated Course Page Navigation state
@@ -49,7 +52,57 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentTab }
   };
 
   useEffect(() => {
+    // 1. Instant local render
     loadData();
+
+    // 2. Fetch fresh live data from Supabase cloud in the background
+    const fetchFreshCloudData = async () => {
+      try {
+        const [cloudAsgs, subsRes] = await Promise.all([
+          supabaseService.fetchAssignments(),
+          fetch('/api/submissions'),
+        ]);
+
+        // Reconcile Assignments (including latest isResultAnnounced status)
+        if (cloudAsgs && Array.isArray(cloudAsgs)) {
+          const cleanAsgs = cloudAsgs.filter((a) => !dataStore.isAssignmentDeleted(a.id));
+          setAssignments(cleanAsgs);
+          dataStore.saveAssignments(cleanAsgs);
+        }
+
+        // Reconcile Submissions
+        if (subsRes.ok) {
+          const subsJson = await subsRes.json();
+          if (subsJson.success && Array.isArray(subsJson.submissions)) {
+            const cleanSubs: Submission[] = subsJson.submissions
+              .filter((row: any) => !dataStore.isAssignmentDeleted(row.assignment_id))
+              .map((row: any) => ({
+                id: row.id,
+                assignmentId: row.assignment_id,
+                studentId: row.student_id,
+                studentName: row.student_name,
+                studentRollNumber: Number(row.student_roll_number),
+                studentSemester: Number(row.student_semester),
+                studentSection: row.student_section,
+                textSubmission: row.text_submission || '',
+                files: row.files || [],
+                submittedAt: row.submitted_at,
+                status: row.status || 'submitted',
+                score: row.marks != null ? Number(row.marks) : undefined,
+                teacherFeedback: row.feedback || undefined,
+                integrityReport: row.integrity_report || { peerPlagiarismScore: 0, aiLikelihoodScore: 0 },
+              }));
+            setSubmissions(cleanSubs);
+            dataStore.saveSubmissions(cleanSubs);
+          }
+        }
+      } catch (err) {
+        console.warn('[StudentDashboard] Background cloud sync warning:', err);
+      }
+    };
+
+    fetchFreshCloudData();
+
     const handleUpdate = () => loadData();
     window.addEventListener('lms_storage_updated', handleUpdate);
     return () => window.removeEventListener('lms_storage_updated', handleUpdate);
@@ -430,7 +483,11 @@ export const StudentDashboard: React.FC<StudentDashboardProps> = ({ currentTab }
                           {sub ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 font-bold text-[10px]">
                               <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              {sub.status === 'graded' ? `Graded (${sub.score}/${asg.totalMarks})` : 'Submitted'}
+                              {sub.status === 'graded' && asg.isResultAnnounced
+                                ? `Graded (${sub.score}/${asg.totalMarks})`
+                                : sub.status === 'graded'
+                                ? 'Result Awaiting Announcement'
+                                : 'Submitted'}
                             </span>
                           ) : deadline.isExpired ? (
                             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 font-bold text-[10px]">
