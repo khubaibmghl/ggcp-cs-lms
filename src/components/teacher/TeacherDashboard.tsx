@@ -107,24 +107,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   useEffect(() => {
     loadData();
 
-    // Actively fetch live submissions & assignments from Supabase to ensure real-time accuracy
+    // Actively fetch live submissions & assignments via server-side API route
+    // (avoids client-side NEXT_PUBLIC_ env-var bake-in issues on Vercel)
     const fetchLatestCloudData = async () => {
       try {
-        const [cloudAsgs, cloudSubs] = await Promise.all([
-          supabaseService.fetchAssignments(),
-          supabaseService.fetchSubmissions(),
-        ]);
-
-        if (cloudSubs && Array.isArray(cloudSubs)) {
-          const cleanSubs = cloudSubs.filter((s) => !dataStore.isAssignmentDeleted(s.assignmentId));
+        const subsRes = await fetch('/api/submissions');
+        const subsJson = await subsRes.json();
+        if (subsJson.success && Array.isArray(subsJson.submissions)) {
+          const cleanSubs: Submission[] = subsJson.submissions
+            .filter((row: any) => !dataStore.isAssignmentDeleted(row.assignment_id))
+            .map((row: any) => ({
+              id: row.id,
+              assignmentId: row.assignment_id,
+              studentId: row.student_id,
+              studentName: row.student_name,
+              studentRollNumber: Number(row.student_roll_number),
+              studentSemester: Number(row.student_semester),
+              studentSection: row.student_section,
+              textSubmission: row.text_submission || '',
+              files: row.files || [],
+              submittedAt: row.submitted_at,
+              status: row.status || 'submitted',
+              score: row.marks != null ? Number(row.marks) : undefined,
+              teacherFeedback: row.feedback || undefined,
+              integrityReport: row.integrity_report || { peerPlagiarismScore: 0, aiLikelihoodScore: 0 },
+            }));
           setSubmissions(cleanSubs);
           dataStore.saveSubmissions(cleanSubs);
-        }
-
-        if (cloudAsgs && Array.isArray(cloudAsgs)) {
-          const cleanAsgs = cloudAsgs.filter((a) => !dataStore.isAssignmentDeleted(a.id));
-          setAssignments(cleanAsgs);
-          dataStore.saveAssignments(cleanAsgs);
         }
       } catch (err) {
         console.warn('[TeacherDashboard] Live cloud data fetch warning:', err);

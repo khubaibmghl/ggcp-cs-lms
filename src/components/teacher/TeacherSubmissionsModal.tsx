@@ -96,31 +96,63 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
     dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id)
   );
 
-  // Direct cloud fetching: When modal opens or refresh is clicked, fetch live from Supabase
+  // Direct cloud fetching via server-side API route — always works on Vercel regardless of
+  // whether NEXT_PUBLIC_ env vars were baked into the client bundle at build time.
   const refreshSubmissionsFromCloud = async (isManual = false) => {
     setIsCloudRefreshing(true);
     try {
-      const cloudSubs = await supabaseService.fetchSubmissions();
-      if (cloudSubs && Array.isArray(cloudSubs)) {
-        // Filter specifically for this assignment
-        const asgSubs = cloudSubs.filter((s) => s.assignmentId === assignment.id);
-        if (asgSubs.length > 0 || isManual) {
-          // Reconcile and save into dataStore so other components also benefit
-          const allCurrent = dataStore.getSubmissions().filter((s) => s.assignmentId !== assignment.id);
-          dataStore.saveSubmissions([...allCurrent, ...asgSubs]);
-          setLocalSubmissions(asgSubs);
-          setCloudLoaded(true);
-          if (isManual) {
-            showSuccess(
-              'Submissions Synced',
-              `Successfully fetched ${asgSubs.length} live submissions from cloud database.`
-            );
-          }
-          return;
+      const res = await fetch(
+        `/api/submissions?assignmentId=${encodeURIComponent(assignment.id)}`
+      );
+      const json = await res.json();
+
+      if (json.success && Array.isArray(json.submissions) && json.submissions.length > 0) {
+        // Map raw DB rows (snake_case) to camelCase Submission objects
+        const asgSubs: Submission[] = json.submissions.map((row: any) => ({
+          id: row.id,
+          assignmentId: row.assignment_id,
+          studentId: row.student_id,
+          studentName: row.student_name,
+          studentRollNumber: Number(row.student_roll_number),
+          studentSemester: Number(row.student_semester),
+          studentSection: row.student_section,
+          textSubmission: row.text_submission || '',
+          files: row.files || [],
+          submittedAt: row.submitted_at,
+          status: row.status || 'submitted',
+          score: row.marks != null ? Number(row.marks) : undefined,
+          teacherFeedback: row.feedback || undefined,
+          integrityReport: row.integrity_report || {
+            peerPlagiarismScore: 0,
+            aiLikelihoodScore: 0,
+            aiReasoning: 'Normal submission',
+            telemetry: { typedCharacterCount: 0, pasteEventCount: 0, totalPastedCharacters: 0, typingDurationSeconds: 0, estimatedWPM: 0, suspiciousBurstDetected: false, timelineLogs: [] },
+          },
+        }));
+
+        // Save into dataStore so all other components also benefit from the fresh data
+        const allCurrent = dataStore.getSubmissions().filter((s) => s.assignmentId !== assignment.id);
+        dataStore.saveSubmissions([...allCurrent, ...asgSubs]);
+        setLocalSubmissions(asgSubs);
+        setCloudLoaded(true);
+
+        if (isManual) {
+          showSuccess(
+            'Submissions Synced',
+            `Fetched ${asgSubs.length} live submissions from cloud database.`
+          );
         }
+        return;
+      }
+
+      if (isManual) {
+        // Surface what happened to help diagnose
+        const msg = json.error || 'No submissions found in cloud for this assignment.';
+        showError('Cloud Sync', msg);
       }
     } catch (err) {
       console.warn('[TeacherSubmissionsModal] Cloud fetch warning:', err);
+      if (isManual) showError('Cloud Sync Failed', 'Could not reach the submissions API. Check network.');
     } finally {
       setIsCloudRefreshing(false);
     }
