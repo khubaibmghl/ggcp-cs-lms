@@ -43,10 +43,10 @@ interface TeacherDashboardProps {
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }) => {
   const { currentUser, users } = useAuth();
   const { showSuccess, showError, showInfo } = useToast();
+  // Start from empty — NEVER from stale localStorage. API fetch populates it.
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [showWizard, setShowWizard] = useState(false);
-  const [wizardError, setWizardError] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(false);  const [wizardError, setWizardError] = useState<string | null>(null);
   const [activeAssignmentForReview, setActiveAssignmentForReview] = useState<Assignment | null>(null);
   const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
   const [isDeletingAssignment, setIsDeletingAssignment] = useState(false);
@@ -105,10 +105,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   };
 
   useEffect(() => {
-    loadData();
-
-    // Actively fetch live submissions & assignments via server-side API route
-    // (avoids client-side NEXT_PUBLIC_ env-var bake-in issues on Vercel)
+    // ALWAYS fetch fresh from the server-side API on mount — do NOT pre-populate from localStorage.
+    // This guarantees every browser, every device, every teacher sees the same live Supabase data.
     const fetchLatestCloudData = async () => {
       try {
         const subsRes = await fetch('/api/submissions');
@@ -135,14 +133,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
           setSubmissions(cleanSubs);
           dataStore.saveSubmissions(cleanSubs);
         }
+        // Also load assignments from dataStore (they are smaller and don't have the quota issue)
+        setAssignments(dataStore.getAssignments());
       } catch (err) {
         console.warn('[TeacherDashboard] Live cloud data fetch warning:', err);
+        // Fallback to local cache only on network error
+        setAssignments(dataStore.getAssignments());
+        setSubmissions(dataStore.getSubmissions());
       }
     };
 
     fetchLatestCloudData();
 
-    const handleUpdate = () => loadData();
+    const handleUpdate = () => {
+      setAssignments(dataStore.getAssignments());
+      setSubmissions(dataStore.getSubmissions());
+    };
     window.addEventListener('lms_storage_updated', handleUpdate);
     return () => window.removeEventListener('lms_storage_updated', handleUpdate);
   }, []);

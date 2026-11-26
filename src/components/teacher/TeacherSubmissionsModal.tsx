@@ -88,13 +88,13 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceStartIndex, setWorkspaceStartIndex] = useState(0);
   const [dataVersion, setDataVersion] = useState(0);
-  const [isCloudRefreshing, setIsCloudRefreshing] = useState(false);
+  // Start as "refreshing" immediately — always load from the server, never from stale cache
+  const [isCloudRefreshing, setIsCloudRefreshing] = useState(true);
   const [cloudLoaded, setCloudLoaded] = useState(false);
 
-  // Read local store initial submissions
-  const [localSubmissions, setLocalSubmissions] = useState<Submission[]>(() =>
-    dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id)
-  );
+  // Start with EMPTY state — the UI must never show stale localStorage data.
+  // The authoritative data always comes from the server API fetch below.
+  const [localSubmissions, setLocalSubmissions] = useState<Submission[]>([]);
 
   // Direct cloud fetching via server-side API route — always works on Vercel regardless of
   // whether NEXT_PUBLIC_ env vars were baked into the client bundle at build time.
@@ -663,7 +663,13 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               Student Submissions ({searchQuery.trim() ? `${displayedSubmissions.length} of ${filteredSubmissions.length}` : filteredSubmissions.length})
             </h3>
 
-            {filteredSubmissions.length === 0 ? (
+            {isCloudRefreshing && !cloudLoaded ? (
+              <div className="p-10 flex flex-col items-center justify-center gap-3 bg-purple-50/60 rounded-2xl border border-dashed border-purple-200">
+                <RefreshCw className="w-6 h-6 text-purple-500 animate-spin" />
+                <p className="text-xs font-bold text-purple-700">Fetching live submissions from cloud database…</p>
+                <p className="text-[10px] text-purple-400">This takes 1–2 seconds</p>
+              </div>
+            ) : filteredSubmissions.length === 0 ? (
               <div className="p-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200 text-xs text-slate-500">
                 No submissions recorded yet for Section {selectedSection}.
               </div>
