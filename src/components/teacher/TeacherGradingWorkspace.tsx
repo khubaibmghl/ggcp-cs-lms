@@ -169,10 +169,10 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       if (!isInput) {
         if (e.altKey && e.key === 'ArrowLeft') {
           e.preventDefault();
-          if (currentIndex > 0) setCurrentIndex((prev) => prev - 1);
+          navigateToStudent(currentIndex - 1);
         } else if (e.altKey && e.key === 'ArrowRight') {
           e.preventDefault();
-          if (currentIndex < submissions.length - 1) setCurrentIndex((prev) => prev + 1);
+          navigateToStudent(currentIndex + 1);
         }
       }
     };
@@ -430,7 +430,70 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
     }
   }, [currentIndex, classroomMap]);
 
-  // Save current student grade and advance
+  // Helper to persist current grade if valid (used for manual save, auto-save on navigation)
+  const saveCurrentGradeIfModified = async (targetSub = activeSub, scoreVal = currentScore, feedbackVal = currentFeedback): Promise<boolean> => {
+    if (!targetSub) return false;
+    if (scoreVal === '' || scoreVal === null || scoreVal === undefined) return false;
+
+    const scoreNum = Number(scoreVal);
+    if (isNaN(scoreNum) || scoreNum < 0 || scoreNum > assignment.totalMarks) {
+      showWarning(
+        'Invalid Score',
+        `Score must be between 0 and ${assignment.totalMarks}. Please correct before continuing.`
+      );
+      return false;
+    }
+
+    // Check if changed compared to existing saved values
+    const hasScoreChanged = targetSub.score !== scoreNum;
+    const hasFeedbackChanged = (targetSub.teacherFeedback || '').trim() !== feedbackVal.trim();
+    if (!hasScoreChanged && !hasFeedbackChanged && targetSub.status === 'graded') {
+      return true; // Already up-to-date
+    }
+
+    const updated: Submission = {
+      ...targetSub,
+      status: 'graded',
+      score: scoreNum,
+      teacherFeedback: feedbackVal.trim(),
+      integrityReport: {
+        ...targetSub.integrityReport,
+        evaluationReport: activeEntry?.correctionReport || targetSub.integrityReport?.evaluationReport,
+        plagiarismScanResult: activeEntry?.plagiarismReport || targetSub.integrityReport?.plagiarismScanResult,
+        peerPlagiarismScore: activeEntry?.plagiarismReport?.peerPlagiarismScore ?? targetSub.integrityReport?.peerPlagiarismScore ?? 0,
+        matchedWithRollNumber: activeEntry?.plagiarismReport?.matchedWithRollNumber ?? targetSub.integrityReport?.matchedWithRollNumber,
+        matchedStudentName: activeEntry?.plagiarismReport?.matchedWithName ?? targetSub.integrityReport?.matchedStudentName,
+      },
+    };
+
+    try {
+      await dataStore.upsertSubmissionAsync(updated);
+      addLog(`💾 Auto-Saved Grade for Roll #${targetSub.studentRollNumber}: ${scoreNum}/${assignment.totalMarks} Marks.`, 'success');
+      onUpdated();
+      return true;
+    } catch (err) {
+      console.error('Failed to save grade:', err);
+      return false;
+    }
+  };
+
+  // Round-trip navigation: Next wraps to 0, Prev wraps to submissions.length - 1
+  const navigateToStudent = async (newIndex: number) => {
+    if (submissions.length === 0) return;
+    // Auto-save current student if teacher typed a valid score
+    await saveCurrentGradeIfModified();
+
+    // Round-trip wrap around
+    let target = newIndex;
+    if (target < 0) {
+      target = submissions.length - 1; // Wrap to last
+    } else if (target >= submissions.length) {
+      target = 0; // Wrap to first
+    }
+    setCurrentIndex(target);
+  };
+
+  // Save current student grade and advance with round-trip
   const handleSaveAndAdvance = async () => {
     if (!activeSub) return;
     setIsApplying(true);
@@ -445,35 +508,17 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       return;
     }
 
-    const updated: Submission = {
-      ...activeSub,
-      status: 'graded',
-      score: scoreNum,
-      teacherFeedback: currentFeedback.trim(),
-      integrityReport: {
-        ...activeSub.integrityReport,
-        evaluationReport: activeEntry?.correctionReport || activeSub.integrityReport?.evaluationReport,
-        plagiarismScanResult: activeEntry?.plagiarismReport || activeSub.integrityReport?.plagiarismScanResult,
-        peerPlagiarismScore: activeEntry?.plagiarismReport?.peerPlagiarismScore ?? activeSub.integrityReport?.peerPlagiarismScore ?? 0,
-        matchedWithRollNumber: activeEntry?.plagiarismReport?.matchedWithRollNumber ?? activeSub.integrityReport?.matchedWithRollNumber,
-        matchedStudentName: activeEntry?.plagiarismReport?.matchedWithName ?? activeSub.integrityReport?.matchedStudentName,
-      },
-    };
-
-    await dataStore.upsertSubmissionAsync(updated);
-    addLog(`💾 Saved Grade for Roll #${activeSub.studentRollNumber}: ${scoreNum}/${assignment.totalMarks} Marks.`, 'success');
-    showSuccess(
-      'Grade Recorded',
-      `Saved ${scoreNum}/${assignment.totalMarks} marks for Roll #${activeSub.studentRollNumber} (${activeSub.studentName}).`
-    );
+    const saved = await saveCurrentGradeIfModified(activeSub, currentScore, currentFeedback);
     setIsApplying(false);
-    onUpdated();
 
-    // Advance to next student
-    if (currentIndex < submissions.length - 1) {
-      setCurrentIndex((prev) => prev + 1);
-    } else {
-      addLog(`🎉 Reached the end of the roster! All ${submissions.length} students processed.`, 'success');
+    if (saved) {
+      showSuccess(
+        'Grade Recorded',
+        `Saved ${scoreNum}/${assignment.totalMarks} marks for Roll #${activeSub.studentRollNumber} (${activeSub.studentName}).`
+      );
+      // Advance to next student with round-trip wrap around
+      const nextIdx = (currentIndex + 1) % submissions.length;
+      setCurrentIndex(nextIdx);
     }
   };
 
@@ -498,21 +543,20 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
           </div>
         </div>
 
-        {/* Student Navigator */}
+        {/* Student Navigator with Round-Trip Wrap-around */}
         <div className="flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-2xl border border-slate-800">
           <button
             type="button"
-            disabled={currentIndex === 0}
-            onClick={() => setCurrentIndex((prev) => Math.max(0, prev - 1))}
-            className="p-1.5 rounded-xl hover:bg-slate-800 disabled:opacity-30 text-slate-300 hover:text-white transition"
-            title="Previous Student"
+            onClick={() => navigateToStudent(currentIndex - 1)}
+            className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+            title="Previous Student (Wraps to last student if at first)"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
 
-          <div className="text-center px-3 min-w-[200px]">
+          <div className="text-center px-3 min-w-[220px]">
             <span className="text-[10px] text-purple-400 uppercase font-mono font-bold block">
-              Student {currentIndex + 1} of {submissions.length}
+              Student {currentIndex + 1} of {submissions.length} (Round-Trip)
             </span>
             <span className="text-xs font-extrabold text-white">
               Roll #{activeSub?.studentRollNumber} — {activeSub?.studentName} (Sec {activeSub?.studentSection})
@@ -521,10 +565,9 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
 
           <button
             type="button"
-            disabled={currentIndex >= submissions.length - 1}
-            onClick={() => setCurrentIndex((prev) => Math.min(submissions.length - 1, prev + 1))}
-            className="p-1.5 rounded-xl hover:bg-slate-800 disabled:opacity-30 text-slate-300 hover:text-white transition"
-            title="Next Student"
+            onClick={() => navigateToStudent(currentIndex + 1)}
+            className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition cursor-pointer"
+            title="Next Student (Wraps to first student if at last)"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
@@ -960,9 +1003,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                     <>
                       <CheckCheck className="w-4 h-4" />
                       <span>
-                        {currentIndex < submissions.length - 1
-                          ? `Save & Jump to Next Student (Roll #${submissions[currentIndex + 1]?.studentRollNumber}) →`
-                          : 'Save Final Student Grade & Finish Session'}
+                        Save &amp; Advance to Next Student (Roll #{submissions[(currentIndex + 1) % submissions.length]?.studentRollNumber}) →
                       </span>
                     </>
                   )}

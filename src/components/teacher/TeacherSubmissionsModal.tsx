@@ -650,25 +650,42 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6">
-      <div className="bg-white rounded-3xl max-w-5xl w-full h-[90vh] shadow-2xl border border-slate-200 flex flex-col overflow-hidden animate-in fade-in zoom-in-95">
-        {/* Modal Top Header */}
-        <div className="p-6 bg-slate-900 text-white flex items-center justify-between flex-shrink-0">
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-mono text-xs font-bold px-2 py-0.5 rounded-md bg-purple-500/30 text-purple-200">
-                {assignment.subjectCode}
-              </span>
-              <span className="text-xs text-slate-300">
-                Semester {assignment.semester} • Max Marks: {assignment.totalMarks}
-              </span>
+    <div className="fixed inset-0 z-50 bg-slate-900 flex flex-col overflow-hidden animate-in fade-in">
+      <div className="flex-1 flex flex-col h-full w-full bg-slate-50 overflow-hidden">
+        {/* Top Header Strip with Breadcrumb Navigation */}
+        <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between flex-shrink-0 shadow-md">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-bold transition border border-slate-700 cursor-pointer"
+              title="Return to faculty assignments dashboard"
+            >
+              <ArrowLeft className="w-4 h-4 text-purple-400" />
+              <span>Back to Dashboard</span>
+            </button>
+
+            <div className="h-5 w-px bg-slate-800" />
+
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-xs font-extrabold px-2 py-0.5 rounded-md bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  {assignment.subjectCode}
+                </span>
+                <span className="text-xs text-slate-400">
+                  Semester {assignment.semester} • Max Marks: {assignment.totalMarks}
+                </span>
+              </div>
+              <h2 className="text-base font-extrabold truncate max-w-xl text-white mt-0.5">
+                {assignment.title} — Submissions &amp; Evaluation Roster
+              </h2>
             </div>
-            <h2 className="text-lg font-extrabold truncate max-w-xl">{assignment.title}</h2>
           </div>
 
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white font-bold transition"
+            className="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 flex items-center justify-center text-slate-300 hover:text-white font-bold transition cursor-pointer"
+            title="Close page"
           >
             ✕
           </button>
@@ -1106,12 +1123,12 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                             <button
                               type="button"
                               onClick={() => {
-                                setSelectedSubmission(sub);
-                                setGradingScore(sub.score !== undefined ? sub.score : '');
-                                setGradingFeedback(sub.teacherFeedback || '');
+                                const targetIdx = filteredSubmissions.findIndex((s) => s.id === sub.id);
+                                setWorkspaceStartIndex(targetIdx >= 0 ? targetIdx : 0);
+                                setWorkspaceOpen(true);
                               }}
-                              className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition"
-                              title="Edit Marks or Critique"
+                              className="px-2.5 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold text-xs border border-purple-200 transition cursor-pointer"
+                              title="Open 2-Section Grading Reader & AI Audit"
                             >
                               Edit Grade
                             </button>
@@ -1120,11 +1137,12 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                           <button
                             type="button"
                             onClick={() => {
-                              setSelectedSubmission(sub);
-                              setGradingScore(sub.score !== undefined ? sub.score : '');
-                              setGradingFeedback(sub.teacherFeedback || '');
+                              const targetIdx = filteredSubmissions.findIndex((s) => s.id === sub.id);
+                              setWorkspaceStartIndex(targetIdx >= 0 ? targetIdx : 0);
+                              setWorkspaceOpen(true);
                             }}
-                            className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5"
+                            className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                            title="Open 2-Section Grading Reader & AI Audit"
                           >
                             <Award className="w-3.5 h-3.5" />
                             Grade &amp; Review

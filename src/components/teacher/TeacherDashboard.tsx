@@ -1112,7 +1112,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
         </div>
       )}
 
-      {/* --- SUBMISSIONS & INTEGRITY REVIEW MODAL --- */}
+      {/* --- SUBMISSIONS & INTEGRITY REVIEW FULL-PAGE ROSTER --- */}
       {activeAssignmentForReview && (
         <TeacherSubmissionsModal
           assignment={activeAssignmentForReview}
