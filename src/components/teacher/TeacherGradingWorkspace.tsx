@@ -82,6 +82,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
   const [currentScore, setCurrentScore] = useState<number | string>('');
   const [currentFeedback, setCurrentFeedback] = useState<string>('');
   const [isApplying, setIsApplying] = useState(false);
+  const [activeEvalStatus, setActiveEvalStatus] = useState<Record<string, { isEvaluating: boolean; error?: string }>>({});
 
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
@@ -125,10 +126,46 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
 
   const activeFileNameLower = activeFile?.name?.toLowerCase() || '';
   const activeFileUri = activeFile?.dataUrl || activeFile?.url || resolvedLocalUri || '';
+  // Convert base64 dataUrl to blob objectUrl to allow seamless embedding in browsers that block direct data: iframe navigation
+  const [blobUrl, setBlobUrl] = useState<string>('');
+
+  useEffect(() => {
+    let currentObjectUrl = '';
+    if (activeFileUri) {
+      if (activeFileUri.startsWith('data:application/pdf')) {
+        try {
+          const parts = activeFileUri.split(';base64,');
+          const raw = window.atob(parts[1]);
+          const rawLength = raw.length;
+          const uInt8Array = new Uint8Array(rawLength);
+          for (let i = 0; i < rawLength; ++i) {
+            uInt8Array[i] = raw.charCodeAt(i);
+          }
+          const blob = new Blob([uInt8Array], { type: 'application/pdf' });
+          currentObjectUrl = URL.createObjectURL(blob);
+          setBlobUrl(currentObjectUrl);
+        } catch {
+          setBlobUrl(activeFileUri);
+        }
+      } else {
+        setBlobUrl(activeFileUri);
+      }
+    } else {
+      setBlobUrl('');
+    }
+
+    return () => {
+      if (currentObjectUrl) {
+        URL.revokeObjectURL(currentObjectUrl);
+      }
+    };
+  }, [activeFileUri]);
+
   const isPdf =
     activeFileNameLower.endsWith('.pdf') ||
     activeFileUri.startsWith('data:application/pdf') ||
     activeFileUri.includes('/raw/upload/') ||
+    activeFileUri.includes('.pdf') ||
     false;
   const isImage =
     activeFileNameLower.endsWith('.png') ||
@@ -351,6 +388,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
     }
 
     addLog(`🤖 Evaluating student Roll #${entry.sub.studentRollNumber} against Canonical Answer Key...`, 'process');
+    setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: true } }));
 
     try {
       const apiKey = typeof window !== 'undefined' ? localStorage.getItem('ggcp_gemini_api_key') || undefined : undefined;
@@ -378,7 +416,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
           questionFile: questionFilePayload,
           solutionFile: solutionFilePayload,
           questionTextOverride: assignment.description,
-          solutionTextOverride: entry.text,
+          solutionTextOverride: entry.text || entry.sub.textSubmission,
           assignment: {
             title: assignment.title,
             subjectCode: assignment.subjectCode,
@@ -406,6 +444,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
           }
           dataStore.upsertSubmission(entry.sub);
           setClassroomMap(new Map(map));
+          setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false } }));
           addLog(`  ↳ Evaluation Complete: Roll #${entry.sub.studentRollNumber} recommended ${data.evaluation.overallScore}/${assignment.totalMarks} Marks (${data.evaluation.status}).`, 'success');
 
           // If current student, populate form
@@ -413,10 +452,16 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
             setCurrentScore(data.evaluation.overallScore);
             setCurrentFeedback(data.evaluation.instructorFeedbackDraft || '');
           }
+          return;
+        } else {
+          setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false, error: data.error || 'Evaluation could not be completed' } }));
         }
+      } else {
+        setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false, error: `HTTP ${res.status}` } }));
       }
-    } catch (err) {
+    } catch (err: any) {
       addLog(`  ❌ Evaluation failed for Roll #${entry.sub.studentRollNumber}: ${err}`, 'error');
+      setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false, error: err?.message || 'Network error' } }));
     }
   };
 
@@ -698,12 +743,35 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
             {docViewTab === 'preview' ? (
               activeFileUri ? (
                 isPdf ? (
-                  <div className="w-full h-full min-h-[500px] rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-md">
-                    <iframe
-                      src={activeFileUri}
-                      className="w-full h-full border-0 bg-white"
-                      title="Student Submitted PDF"
-                    />
+                  <div className="w-full h-full min-h-[550px] flex flex-col rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-xl">
+                    <object
+                      data={blobUrl || activeFileUri}
+                      type="application/pdf"
+                      className="w-full h-full min-h-[550px] border-0 flex-1 bg-white"
+                    >
+                      <iframe
+                        src={blobUrl || activeFileUri}
+                        className="w-full h-full min-h-[550px] border-0 bg-white"
+                        title="Student Submitted PDF"
+                      >
+                        <div className="p-8 text-center text-slate-300 space-y-3 bg-slate-900 h-full flex flex-col items-center justify-center">
+                          <FileText className="w-12 h-12 text-purple-400" />
+                          <p className="text-xs font-bold text-white">Direct browser PDF frame blocked</p>
+                          <p className="text-[11px] text-slate-400 max-w-xs">
+                            Your browser prefers viewing external PDFs in a tab or via direct download.
+                          </p>
+                          <a
+                            href={activeFileUri}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold transition shadow-xs inline-flex items-center gap-1.5"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>Open PDF In New Tab</span>
+                          </a>
+                        </div>
+                      </iframe>
+                    </object>
                   </div>
                 ) : isImage ? (
                   <div className="space-y-3">
@@ -865,17 +933,46 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                         setCurrentScore(corrReport.overallScore);
                         setCurrentFeedback(corrReport.instructorFeedbackDraft);
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-white text-slate-900 font-extrabold text-xs hover:bg-slate-100 transition shadow-xs flex items-center gap-1"
+                      className="px-3 py-1.5 rounded-xl bg-white text-slate-900 font-extrabold text-xs hover:bg-slate-100 transition shadow-xs flex items-center gap-1 cursor-pointer"
                     >
                       <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
                       Auto-Fill Form
                     </button>
                   </div>
 
+                  {/* Highlights / Strengths / Key Suggestions */}
+                  {corrReport.areasForImprovement && corrReport.areasForImprovement.length > 0 && (
+                    <div className="p-3 bg-amber-950/30 rounded-xl border border-amber-500/30 text-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                        AI Suggestions &amp; Areas for Improvement:
+                      </span>
+                      <ul className="list-disc list-inside text-[11px] text-amber-200/90 space-y-0.5">
+                        {corrReport.areasForImprovement.map((imp: string, idx: number) => (
+                          <li key={idx}>{imp}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {corrReport.strengths && corrReport.strengths.length > 0 && (
+                    <div className="p-3 bg-emerald-950/30 rounded-xl border border-emerald-500/30 text-xs space-y-1.5">
+                      <span className="text-[11px] font-bold text-emerald-300 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        Identified Strengths:
+                      </span>
+                      <ul className="list-disc list-inside text-[11px] text-emerald-200/90 space-y-0.5">
+                        {corrReport.strengths.map((str: string, idx: number) => (
+                          <li key={idx}>{str}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                   {/* Question Breakdown */}
                   <div className="space-y-2">
                     {corrReport.questionBreakdown?.map((q: any, i: number) => (
-                      <div key={i} className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1">
+                      <div key={i} className="p-3 bg-slate-950 rounded-xl border border-slate-800 text-xs space-y-1.5">
                         <div className="flex items-center justify-between">
                           <span className="font-bold text-slate-200">{q.questionNumber}: {q.prompt}</span>
                           <span
@@ -891,14 +988,46 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                           </span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-snug">{q.feedback}</p>
+                        {q.studentEvidenceSnippet && (
+                          <div className="p-2 bg-slate-900 rounded-lg border border-slate-800 font-mono text-[10px] text-slate-400 line-clamp-2">
+                            Evidence: &ldquo;{q.studentEvidenceSnippet}&rdquo;
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>
                 </div>
+              ) : activeSub && activeEvalStatus[activeSub.id]?.error ? (
+                <div className="p-4 bg-slate-950 rounded-2xl border border-rose-500/30 text-xs text-rose-300 flex items-center justify-between">
+                  <div>
+                    <span className="font-bold block">Evaluation Notice</span>
+                    <span className="text-[11px] text-rose-400">
+                      {activeEvalStatus[activeSub.id].error}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => evaluateStudentInMap(activeSub.id)}
+                    className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs"
+                  >
+                    Retry Analysis
+                  </button>
+                </div>
               ) : (
-                <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-400 flex items-center gap-2">
-                  <span className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                  <span>Synthesizing Canonical Model Solution and evaluating student answer...</span>
+                <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-400 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Synthesizing Canonical Model Solution and evaluating student answer...</span>
+                  </div>
+                  {activeSub && (
+                    <button
+                      type="button"
+                      onClick={() => evaluateStudentInMap(activeSub.id)}
+                      className="text-[11px] font-bold text-purple-400 hover:text-purple-300 ml-2"
+                    >
+                      Run Now
+                    </button>
+                  )}
                 </div>
               )}
             </div>
