@@ -43,9 +43,12 @@ interface TeacherDashboardProps {
 export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }) => {
   const { currentUser, users } = useAuth();
   const { showSuccess, showError, showInfo } = useToast();
-  // Start from empty — NEVER from stale localStorage. API fetch populates it.
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  // SWR (Stale-While-Revalidate):
+  // Render cached assignments & submissions in 0ms instantly on page load,
+  // then seamlessly reconcile with live Supabase cloud data in the background.
+  const [assignments, setAssignments] = useState<Assignment[]>(() => dataStore.getAssignments());
+  const [submissions, setSubmissions] = useState<Submission[]>(() => dataStore.getSubmissions());
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
   const [showWizard, setShowWizard] = useState(false);  const [wizardError, setWizardError] = useState<string | null>(null);
   const [activeAssignmentForReview, setActiveAssignmentForReview] = useState<Assignment | null>(null);
   const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
@@ -105,9 +108,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   };
 
   useEffect(() => {
-    // ALWAYS fetch fresh from the server-side API on mount — do NOT pre-populate from localStorage.
-    // This guarantees every browser, every device, every teacher sees the same live Supabase data.
+    // SWR pattern: Initial cached data is already displayed in 0ms!
+    // Fetch live Supabase updates in the background and silently update state.
     const fetchLatestCloudData = async () => {
+      setIsCloudSyncing(true);
       try {
         const subsRes = await fetch('/api/submissions');
         const subsJson = await subsRes.json();
@@ -133,13 +137,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
           setSubmissions(cleanSubs);
           dataStore.saveSubmissions(cleanSubs);
         }
-        // Also load assignments from dataStore (they are smaller and don't have the quota issue)
         setAssignments(dataStore.getAssignments());
       } catch (err) {
-        console.warn('[TeacherDashboard] Live cloud data fetch warning:', err);
-        // Fallback to local cache only on network error
-        setAssignments(dataStore.getAssignments());
-        setSubmissions(dataStore.getSubmissions());
+        console.warn('[TeacherDashboard] Background cloud fetch warning:', err);
+      } finally {
+        setIsCloudSyncing(false);
       }
     };
 
