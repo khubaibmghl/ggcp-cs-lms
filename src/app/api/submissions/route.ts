@@ -24,9 +24,19 @@ export async function GET(req: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY ||
     '';
 
+  // Return diagnostics in the response so we can see exactly what's wrong in the browser
   if (!supabaseUrl || !supabaseKey) {
     return NextResponse.json(
-      { success: false, error: 'Supabase not configured on server', submissions: [] },
+      {
+        success: false,
+        error: 'Supabase not configured on server',
+        diagnostic: {
+          hasUrl: !!supabaseUrl,
+          hasKey: !!supabaseKey,
+          urlPrefix: supabaseUrl ? supabaseUrl.slice(0, 30) : 'MISSING',
+        },
+        submissions: [],
+      },
       { status: 503 }
     );
   }
@@ -49,12 +59,17 @@ export async function GET(req: NextRequest) {
     if (error) {
       console.error('[/api/submissions] Supabase error:', error);
       return NextResponse.json(
-        { success: false, error: error.message, submissions: [] },
+        { success: false, error: error.message, errorCode: error.code, hint: error.hint, submissions: [] },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true, submissions: data || [] });
+    return NextResponse.json({
+      success: true,
+      count: data?.length ?? 0,
+      assignmentId: assignmentId || 'all',
+      submissions: data || [],
+    });
   } catch (err: any) {
     console.error('[/api/submissions] Exception:', err);
     return NextResponse.json(
