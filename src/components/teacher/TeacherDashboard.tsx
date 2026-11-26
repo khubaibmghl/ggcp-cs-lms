@@ -984,6 +984,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
       {activeAssignmentForReview && (
         <TeacherSubmissionsModal
           assignment={activeAssignmentForReview}
+          initialSubmissions={submissions.filter((s) => s.assignmentId === activeAssignmentForReview.id)}
           onClose={() => {
             setActiveAssignmentForReview(null);
             loadData();

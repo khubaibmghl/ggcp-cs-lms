@@ -38,11 +38,13 @@ import { supabaseService } from '@/lib/supabaseService';
 
 interface TeacherSubmissionsModalProps {
   assignment: Assignment;
+  initialSubmissions?: Submission[];
   onClose: () => void;
 }
 
 export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = ({
   assignment,
+  initialSubmissions = [],
   onClose,
 }) => {
   const { users } = useAuth();
@@ -88,23 +90,41 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceStartIndex, setWorkspaceStartIndex] = useState(0);
   const [dataVersion, setDataVersion] = useState(0);
-  // Start as "refreshing" immediately — always load from the server, never from stale cache
-  const [isCloudRefreshing, setIsCloudRefreshing] = useState(true);
-  const [cloudLoaded, setCloudLoaded] = useState(false);
-
-  // Start with EMPTY state — the UI must never show stale localStorage data.
-  // The authoritative data always comes from the server API fetch below.
-  const [localSubmissions, setLocalSubmissions] = useState<Submission[]>([]);
+  // Start with initialSubmissions if provided (e.g. from Dashboard's 171 fetched submissions),
+  // or fall back to dataStore, while cloud refresh executes.
+  const [localSubmissions, setLocalSubmissions] = useState<Submission[]>(() => {
+    if (initialSubmissions && initialSubmissions.length > 0) {
+      return initialSubmissions;
+    }
+    return dataStore.getSubmissions().filter((s) => s.assignmentId === assignment.id);
+  });
+  const [isCloudRefreshing, setIsCloudRefreshing] = useState(false);
+  const [cloudLoaded, setCloudLoaded] = useState(() => initialSubmissions.length > 0);
 
   // Direct cloud fetching via server-side API route — always works on Vercel regardless of
   // whether NEXT_PUBLIC_ env vars were baked into the client bundle at build time.
   const refreshSubmissionsFromCloud = async (isManual = false) => {
     setIsCloudRefreshing(true);
     try {
-      const res = await fetch(
+      // Fetch both for this assignment, or all if assignmentId query was too strict
+      let res = await fetch(
         `/api/submissions?assignmentId=${encodeURIComponent(assignment.id)}`
       );
-      const json = await res.json();
+      let json = await res.json();
+
+      // If specific query returned 0, fallback to general fetch to be 100% resilient
+      if (!json.success || !Array.isArray(json.submissions) || json.submissions.length === 0) {
+        res = await fetch('/api/submissions');
+        const fallbackJson = await res.json();
+        if (fallbackJson.success && Array.isArray(fallbackJson.submissions)) {
+          json = {
+            success: true,
+            submissions: fallbackJson.submissions.filter(
+              (r: any) => r.assignment_id === assignment.id
+            ),
+          };
+        }
+      }
 
       if (json.success && Array.isArray(json.submissions) && json.submissions.length > 0) {
         // Map raw DB rows (snake_case) to camelCase Submission objects
@@ -117,10 +137,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
           studentSemester: Number(row.student_semester),
           studentSection: row.student_section,
           textSubmission: row.text_submission || '',
-          // Build a lightweight files array from file_url (the sanitized cloud URL).
-          // Full files metadata loads separately when teacher clicks View File.
           files: row.file_url
             ? [{ name: 'submission_file', type: '', size: 0, url: row.file_url }]
+            : Array.isArray(row.files)
+            ? row.files
             : [],
           submittedAt: row.submitted_at,
           status: row.status || 'submitted',
@@ -150,13 +170,12 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       }
 
       if (isManual) {
-        // Surface what happened to help diagnose
         const msg = json.error || 'No submissions found in cloud for this assignment.';
         showError('Cloud Sync', msg);
       }
     } catch (err) {
       console.warn('[TeacherSubmissionsModal] Cloud fetch warning:', err);
-      if (isManual) showError('Cloud Sync Failed', 'Could not reach the submissions API. Check network.');
+      if (isManual) showError('Cloud Sync Failed', 'Could not reach the submissions API.');
     } finally {
       setIsCloudRefreshing(false);
     }
