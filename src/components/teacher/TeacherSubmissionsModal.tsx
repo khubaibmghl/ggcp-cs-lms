@@ -117,7 +117,11 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
           studentSemester: Number(row.student_semester),
           studentSection: row.student_section,
           textSubmission: row.text_submission || '',
-          files: row.files || [],
+          // Build a lightweight files array from file_url (the sanitized cloud URL).
+          // Full files metadata loads separately when teacher clicks View File.
+          files: row.file_url
+            ? [{ name: 'submission_file', type: '', size: 0, url: row.file_url }]
+            : [],
           submittedAt: row.submitted_at,
           status: row.status || 'submitted',
           score: row.marks != null ? Number(row.marks) : undefined,

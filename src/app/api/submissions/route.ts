@@ -44,9 +44,31 @@ export async function GET(req: NextRequest) {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
+    // Select specific lightweight columns ONLY — deliberately skip the heavy `files` JSONB
+    // column which may contain legacy multi-MB base64 strings causing statement timeouts.
+    // File URLs are still available via the `file_url` column and the sanitized `files` metadata.
+    const selectColumns = [
+      'id',
+      'assignment_id',
+      'student_id',
+      'student_name',
+      'student_roll_number',
+      'student_semester',
+      'student_section',
+      'submitted_at',
+      'status',
+      'marks',
+      'feedback',
+      'text_submission',
+      'integrity_report',
+      'file_url',
+      'ai_suggested_score',
+      'test_cases_passed',
+      'test_cases_total',
+    ].join(', ');
     let query = supabase
       .from('submissions')
-      .select('*')
+      .select(selectColumns)
       .order('submitted_at', { ascending: false });
 
     // Filter by specific assignment if provided
