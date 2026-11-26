@@ -197,33 +197,46 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
   const allSubmissions = localSubmissions;
 
-  // Filter submissions by target section
+  // Filter submissions by target section (case-insensitive and trimmed)
   const filteredSubmissions =
     selectedSection === 'All'
       ? allSubmissions
-      : allSubmissions.filter((s) => s.studentSection === selectedSection);
+      : allSubmissions.filter((s) => (s.studentSection || '').trim().toLowerCase() === selectedSection.toLowerCase());
 
   // Filter submissions by live search query (name or roll number)
   const displayedSubmissions = filteredSubmissions.filter((sub) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase().trim();
     return (
-      sub.studentName.toLowerCase().includes(q) ||
-      String(sub.studentRollNumber).includes(q) ||
-      sub.studentSection.toLowerCase().includes(q)
+      (sub.studentName || '').toLowerCase().includes(q) ||
+      String(sub.studentRollNumber || '').includes(q) ||
+      (sub.studentSection || '').toLowerCase().includes(q)
     );
   });
 
   // Filter all students registered for this semester & section
   const sectionStudents = users.filter((u) => {
     if (u.role !== 'student' || u.semester !== assignment.semester) return false;
-    if (selectedSection !== 'All' && u.section !== selectedSection) return false;
+    if (selectedSection !== 'All') {
+      return (u.section || '').trim().toLowerCase() === selectedSection.toLowerCase();
+    }
     return true;
   });
 
-  // Calculate missing roll numbers
-  const submittedRolls = new Set(filteredSubmissions.map((s) => s.studentRollNumber));
-  const missingStudents = sectionStudents.filter((s) => !submittedRolls.has(s.rollNumber || 0));
+  // Calculate missing students strictly within the selected scope:
+  // Check both studentId and (section + rollNumber) to avoid cross-section roll number collision!
+  const missingStudents = sectionStudents.filter((st) => {
+    const hasSubmitted = filteredSubmissions.some((sub) => {
+      // 1. Match by unique user/student ID
+      if (sub.studentId && st.id && sub.studentId === st.id) return true;
+      // 2. Match by exact roll number AND section
+      const rollMatch = Number(sub.studentRollNumber) === Number(st.rollNumber);
+      const secMatch =
+        (sub.studentSection || '').trim().toLowerCase() === (st.section || '').trim().toLowerCase();
+      return rollMatch && secMatch;
+    });
+    return !hasSubmitted;
+  });
 
   // Export official marks award list CSV formatted for College Examination Gazettes
   const handleExportAwardListCsv = () => {
