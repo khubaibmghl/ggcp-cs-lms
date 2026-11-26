@@ -57,23 +57,78 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   const [copiedAsgId, setCopiedAsgId] = useState<string | null>(null);
   const [announcingAsgId, setAnnouncingAsgId] = useState<string | null>(null);
 
+  // Customized Announcement Dialog State
+  const [announcementModal, setAnnouncementModal] = useState<{
+    isOpen: boolean;
+    assignment: Assignment | null;
+    status: 'confirm' | 'incomplete' | 'no_submissions';
+    totalSubmissions: number;
+    gradedSubmissions: number;
+    pendingCount: number;
+    missingCount: number;
+  }>({
+    isOpen: false,
+    assignment: null,
+    status: 'confirm',
+    totalSubmissions: 0,
+    gradedSubmissions: 0,
+    pendingCount: 0,
+    missingCount: 0,
+  });
+
   // Handle Announce Result: Verifies all submitted assignments have been evaluated
-  const handleAnnounceResult = async (asg: Assignment) => {
+  const handleAnnounceResult = (asg: Assignment) => {
     const asgSubs = submissions.filter((s) => s.assignmentId === asg.id);
     if (asgSubs.length === 0) {
-      showError('No Submissions', 'No students have submitted this assignment yet to announce results.');
+      setAnnouncementModal({
+        isOpen: true,
+        assignment: asg,
+        status: 'no_submissions',
+        totalSubmissions: 0,
+        gradedSubmissions: 0,
+        pendingCount: 0,
+        missingCount: 0,
+      });
       return;
     }
 
+    const gradedSubs = asgSubs.filter((s) => s.status === 'graded');
     const unEvaluatedSubs = asgSubs.filter((s) => s.status !== 'graded');
+
+    // Calculate missing registered students
+    const targetStudents = users.filter((u) => {
+      if (u.role !== 'student' || u.semester !== asg.semester) return false;
+      if (asg.targetSections.includes('All')) return true;
+      return u.section && asg.targetSections.includes(u.section);
+    });
+    const missingCount = Math.max(0, targetStudents.length - asgSubs.length);
+
     if (unEvaluatedSubs.length > 0) {
-      showError(
-        'Grading Incomplete',
-        `${unEvaluatedSubs.length} student submission${unEvaluatedSubs.length > 1 ? 's are' : ' is'} pending evaluation. Grade all student assignments first before announcing results.`
-      );
+      setAnnouncementModal({
+        isOpen: true,
+        assignment: asg,
+        status: 'incomplete',
+        totalSubmissions: asgSubs.length,
+        gradedSubmissions: gradedSubs.length,
+        pendingCount: unEvaluatedSubs.length,
+        missingCount,
+      });
       return;
     }
 
+    // All submissions graded -> show verification confirmation dialog
+    setAnnouncementModal({
+      isOpen: true,
+      assignment: asg,
+      status: 'confirm',
+      totalSubmissions: asgSubs.length,
+      gradedSubmissions: gradedSubs.length,
+      pendingCount: 0,
+      missingCount,
+    });
+  };
+
+  const confirmAndPublishAnnouncement = async (asg: Assignment) => {
     setAnnouncingAsgId(asg.id);
     try {
       const updatedAsg: Assignment = {
@@ -90,13 +145,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
       // 2. Sync to Supabase cloud
       await supabaseService.upsertAssignment(updatedAsg);
 
+      setAnnouncementModal((prev) => ({ ...prev, isOpen: false }));
       showSuccess(
         'Result Announced!',
-        `Official results for "${asg.title}" have been announced. All ${asgSubs.length} students can now view their marks and feedback in their student portal.`
+        `Official results for "${asg.title}" have been announced. All students can now view their marks and remarks in their portal.`
       );
     } catch (err) {
       console.error('Error announcing results:', err);
-      showError('Announcement Error', 'Could not sync result announcement to cloud.');
+      showError('Announcement Error', 'Could not sync result announcement to cloud database.');
     } finally {
       setAnnouncingAsgId(null);
     }
@@ -1131,6 +1187,130 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- CUSTOMIZED ANNOUNCEMENT VERIFICATION & ERROR DIALOG --- */}
+      {announcementModal.isOpen && announcementModal.assignment && (
+        <div className="fixed inset-0 z-80 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-200 animate-in zoom-in-95 space-y-5">
+            {/* Header Icon based on status */}
+            {announcementModal.status === 'confirm' && (
+              <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-700 flex items-center justify-center mx-auto shadow-inner">
+                <Megaphone className="w-7 h-7" />
+              </div>
+            )}
+            {announcementModal.status === 'incomplete' && (
+              <div className="w-14 h-14 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center mx-auto shadow-inner">
+                <AlertCircle className="w-7 h-7" />
+              </div>
+            )}
+            {announcementModal.status === 'no_submissions' && (
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center mx-auto shadow-inner">
+                <Users2 className="w-7 h-7" />
+              </div>
+            )}
+
+            {/* Dialog Content */}
+            <div className="text-center space-y-2">
+              <span className="font-mono text-[11px] font-extrabold uppercase tracking-wider text-purple-700 bg-purple-100 px-3 py-1 rounded-full">
+                {announcementModal.assignment.subjectCode} — Semester {announcementModal.assignment.semester}
+              </span>
+              <h3 className="text-lg font-black text-slate-900 pt-1">
+                {announcementModal.status === 'confirm' && 'Verify & Announce Official Results?'}
+                {announcementModal.status === 'incomplete' && 'Cannot Announce Results: Incomplete Grading'}
+                {announcementModal.status === 'no_submissions' && 'No Student Submissions Received'}
+              </h3>
+              <p className="text-xs text-slate-600 leading-relaxed max-w-md mx-auto">
+                {announcementModal.status === 'confirm' && (
+                  <>
+                    You are about to release official scores and feedback for{' '}
+                    <strong className="text-slate-900">&ldquo;{announcementModal.assignment.title}&rdquo;</strong>.
+                    Once announced, all students will instantly see their marks and remarks in their portal.
+                  </>
+                )}
+                {announcementModal.status === 'incomplete' && (
+                  <>
+                    Faculty examination rules require <strong>100% of student submissions to be graded</strong> before marks can be released.
+                    Please evaluate the remaining pending submissions first.
+                  </>
+                )}
+                {announcementModal.status === 'no_submissions' && (
+                  <>
+                    No students have submitted solutions for <strong className="text-slate-900">&ldquo;{announcementModal.assignment.title}&rdquo;</strong> yet.
+                    Results can only be announced once student work has been submitted and graded.
+                  </>
+                )}
+              </p>
+            </div>
+
+            {/* Evaluation Statistics Breakdown */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">Submitted</span>
+                <span className="text-base font-black text-slate-900">{announcementModal.totalSubmissions}</span>
+              </div>
+              <div className={`p-2.5 rounded-xl border ${announcementModal.pendingCount > 0 ? 'bg-rose-50 border-rose-200' : 'bg-emerald-50 border-emerald-200'}`}>
+                <span className="text-[10px] font-bold block uppercase text-slate-500">Graded</span>
+                <span className={`text-base font-black ${announcementModal.pendingCount > 0 ? 'text-rose-700' : 'text-emerald-700'}`}>
+                  {announcementModal.gradedSubmissions} / {announcementModal.totalSubmissions}
+                </span>
+              </div>
+              <div className="bg-white p-2.5 rounded-xl border border-slate-200">
+                <span className="text-[10px] text-slate-400 font-bold block uppercase">Pending</span>
+                <span className={`text-base font-black ${announcementModal.pendingCount > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                  {announcementModal.pendingCount}
+                </span>
+              </div>
+            </div>
+
+            {/* Bottom Actions */}
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setAnnouncementModal((prev) => ({ ...prev, isOpen: false }))}
+                className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 font-bold text-xs transition cursor-pointer"
+              >
+                {announcementModal.status === 'incomplete' ? 'Close' : 'Cancel'}
+              </button>
+
+              {announcementModal.status === 'confirm' && (
+                <button
+                  type="button"
+                  disabled={Boolean(announcingAsgId)}
+                  onClick={() => confirmAndPublishAnnouncement(announcementModal.assignment!)}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-extrabold text-xs shadow-md shadow-amber-900/20 transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                >
+                  {announcingAsgId ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Releasing Results...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Megaphone className="w-3.5 h-3.5" />
+                      <span>Confirm &amp; Announce</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {announcementModal.status === 'incomplete' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const asg = announcementModal.assignment;
+                    setAnnouncementModal((prev) => ({ ...prev, isOpen: false }));
+                    if (asg) setActiveAssignmentForReview(asg);
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-xs shadow-md shadow-purple-900/20 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Grade Pending Now</span>
+                </button>
+              )}
             </div>
           </div>
         </div>

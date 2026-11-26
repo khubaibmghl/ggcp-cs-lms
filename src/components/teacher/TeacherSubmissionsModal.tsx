@@ -386,6 +386,108 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
     showSuccess('Grade Saved', `Recorded ${finalScore}/${assignment.totalMarks} marks.`);
   };
 
+  // Mark an individual missing student as Zero (Absent)
+  const handleMarkZeroForStudent = async (student: (typeof users)[0]) => {
+    const zeroSub: Submission = {
+      id: `sub-absent-${assignment.id}-${student.id}`,
+      assignmentId: assignment.id,
+      studentId: student.id,
+      studentName: student.name,
+      studentRollNumber: student.rollNumber || 0,
+      studentSemester: student.semester || assignment.semester,
+      studentSection: student.section || 'A1',
+      textSubmission: '[ABSENT - NO SUBMISSION RECORDED BY DEADLINE]',
+      files: [],
+      submittedAt: new Date().toISOString(),
+      status: 'graded',
+      score: 0,
+      teacherFeedback: 'Zero marks awarded: No submission was submitted by the official deadline.',
+      integrityReport: {
+        peerPlagiarismScore: 0,
+        aiLikelihoodScore: 0,
+        aiReasoning: 'Absent / Non-submission',
+        telemetry: {
+          typedCharacterCount: 0,
+          pasteEventCount: 0,
+          totalPastedCharacters: 0,
+          typingDurationSeconds: 0,
+          estimatedWPM: 0,
+          suspiciousBurstDetected: false,
+          timelineLogs: [],
+        },
+      },
+    };
+
+    await dataStore.upsertSubmissionAsync(zeroSub);
+    setLocalSubmissions((prev) => {
+      const filtered = prev.filter((s) => !(s.studentId === student.id && s.assignmentId === assignment.id));
+      return [...filtered, zeroSub];
+    });
+    showSuccess(
+      'Marked as Zero',
+      `Awarded 0/${assignment.totalMarks} (Absent) to Roll #${student.rollNumber} (${student.name}).`
+    );
+  };
+
+  // Bulk action: Mark all missing students in the current view as Zero (Absent)
+  const [isMarkingAllZero, setIsMarkingAllZero] = useState(false);
+  const handleMarkAllMissingAsZero = async () => {
+    if (missingStudents.length === 0) return;
+    setIsMarkingAllZero(true);
+    try {
+      const now = new Date().toISOString();
+      const newZeroSubs: Submission[] = missingStudents.map((student) => ({
+        id: `sub-absent-${assignment.id}-${student.id}`,
+        assignmentId: assignment.id,
+        studentId: student.id,
+        studentName: student.name,
+        studentRollNumber: student.rollNumber || 0,
+        studentSemester: student.semester || assignment.semester,
+        studentSection: student.section || 'A1',
+        textSubmission: '[ABSENT - NO SUBMISSION RECORDED BY DEADLINE]',
+        files: [],
+        submittedAt: now,
+        status: 'graded',
+        score: 0,
+        teacherFeedback: 'Zero marks awarded: No submission was submitted by the official deadline.',
+        integrityReport: {
+          peerPlagiarismScore: 0,
+          aiLikelihoodScore: 0,
+          aiReasoning: 'Absent / Non-submission',
+          telemetry: {
+            typedCharacterCount: 0,
+            pasteEventCount: 0,
+            totalPastedCharacters: 0,
+            typingDurationSeconds: 0,
+            estimatedWPM: 0,
+            suspiciousBurstDetected: false,
+            timelineLogs: [],
+          },
+        },
+      }));
+
+      for (const sub of newZeroSubs) {
+        await dataStore.upsertSubmissionAsync(sub);
+      }
+
+      setLocalSubmissions((prev) => {
+        const studentIds = new Set(missingStudents.map((s) => s.id));
+        const kept = prev.filter((s) => !studentIds.has(s.studentId));
+        return [...kept, ...newZeroSubs];
+      });
+
+      showSuccess(
+        'All Missing Marked as Zero',
+        `Successfully awarded 0/${assignment.totalMarks} to all ${newZeroSubs.length} non-submitted students.`
+      );
+    } catch (err) {
+      console.error('Error marking missing as zero:', err);
+      showError('Error', 'Failed to mark missing students as zero.');
+    } finally {
+      setIsMarkingAllZero(false);
+    }
+  };
+
   // --- 1. REAL PEER PLAGIARISM CHECKER ---
   const handleScanPlagiarism = async (targetSub: Submission) => {
     setScanningSubId(targetSub.id);
@@ -1049,20 +1151,44 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 </p>
               </div>
 
-              {/* Missing Roster Sort Toggle */}
-              {missingStudents.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() =>
-                    setMissingSort((prev) => (prev === 'roll-asc' ? 'roll-desc' : 'roll-asc'))
-                  }
-                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 text-[11px] font-bold transition flex-shrink-0"
-                  title="Toggle Roll Number Sorting"
-                >
-                  <ArrowUpDown className="w-3 h-3 text-rose-600" />
-                  <span>#{missingSort === 'roll-desc' ? ' (Desc)' : ' (Asc)'}</span>
-                </button>
-              )}
+              {/* Missing Roster Sort Toggle & Mark All Zero Button */}
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {missingStudents.length > 0 && (
+                  <button
+                    type="button"
+                    disabled={isMarkingAllZero}
+                    onClick={handleMarkAllMissingAsZero}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800 text-[11px] font-extrabold transition disabled:opacity-50 cursor-pointer shadow-2xs"
+                    title="Award 0 marks to all non-submitted students at once"
+                  >
+                    {isMarkingAllZero ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin text-rose-700" />
+                        <span>Marking...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Award className="w-3 h-3 text-rose-700" />
+                        <span>Mark All as Zero</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                {missingStudents.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMissingSort((prev) => (prev === 'roll-asc' ? 'roll-desc' : 'roll-asc'))
+                    }
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 text-[11px] font-bold transition flex-shrink-0"
+                    title="Toggle Roll Number Sorting"
+                  >
+                    <ArrowUpDown className="w-3 h-3 text-rose-600" />
+                    <span>#{missingSort === 'roll-desc' ? ' (Desc)' : ' (Asc)'}</span>
+                  </button>
+                )}
+              </div>
             </div>
 
             {missingStudents.length === 0 ? (
@@ -1088,9 +1214,19 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                       </div>
                     </div>
 
-                    <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-extrabold uppercase tracking-wide">
-                      Missing
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handleMarkZeroForStudent(st)}
+                        className="px-2 py-0.5 rounded-lg border border-rose-300 bg-rose-50 hover:bg-rose-100 text-rose-800 text-[10px] font-bold transition shadow-2xs cursor-pointer"
+                        title="Mark this absent student with 0 marks"
+                      >
+                        Mark as 0
+                      </button>
+                      <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[10px] font-extrabold uppercase tracking-wide">
+                        Missing
+                      </span>
+                    </div>
                   </div>
                 ))}
               </div>
