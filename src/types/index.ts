@@ -82,6 +82,8 @@ export interface Assignment {
   resourceFileName?: string;
   resourceFileContent?: string;
   resourceFileKey?: string;
+  isResultAnnounced?: boolean;
+  resultAnnouncedAt?: string;
   createdAt: string;
 }
 

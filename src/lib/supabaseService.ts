@@ -89,6 +89,8 @@ function mapDbAssignment(row: any): Assignment {
     aiRubric: row.ai_rubric || [],
     resourceFileName: row.resource_file_name,
     resourceFileContent: row.resource_file_content,
+    isResultAnnounced: Boolean(row.is_result_announced),
+    resultAnnouncedAt: row.result_announced_at || undefined,
     createdAt: row.created_at,
   };
 }
@@ -112,6 +114,8 @@ function mapAssignmentToDb(a: Assignment): any {
     ai_rubric: a.aiRubric || [],
     resource_file_name: a.resourceFileName || null,
     resource_file_content: a.resourceFileContent && a.resourceFileContent.length < 50000 ? a.resourceFileContent : null,
+    is_result_announced: Boolean(a.isResultAnnounced),
+    result_announced_at: a.resultAnnouncedAt || null,
     created_at: a.createdAt,
   };
 }

@@ -30,6 +30,7 @@ import {
   Search,
   Filter,
   Loader2,
+  Megaphone,
 } from 'lucide-react';
 import { TeacherSubmissionsModal } from './TeacherSubmissionsModal';
 import { formatDateDDMMMYYYY } from '@/lib/dateUtils';
@@ -54,6 +55,52 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
   const [assignmentToDelete, setAssignmentToDelete] = useState<Assignment | null>(null);
   const [isDeletingAssignment, setIsDeletingAssignment] = useState(false);
   const [copiedAsgId, setCopiedAsgId] = useState<string | null>(null);
+  const [announcingAsgId, setAnnouncingAsgId] = useState<string | null>(null);
+
+  // Handle Announce Result: Verifies all submitted assignments have been evaluated
+  const handleAnnounceResult = async (asg: Assignment) => {
+    const asgSubs = submissions.filter((s) => s.assignmentId === asg.id);
+    if (asgSubs.length === 0) {
+      showError('No Submissions', 'No students have submitted this assignment yet to announce results.');
+      return;
+    }
+
+    const unEvaluatedSubs = asgSubs.filter((s) => s.status !== 'graded');
+    if (unEvaluatedSubs.length > 0) {
+      showError(
+        'Grading Incomplete',
+        `${unEvaluatedSubs.length} student submission${unEvaluatedSubs.length > 1 ? 's are' : ' is'} pending evaluation. Grade all student assignments first before announcing results.`
+      );
+      return;
+    }
+
+    setAnnouncingAsgId(asg.id);
+    try {
+      const updatedAsg: Assignment = {
+        ...asg,
+        isResultAnnounced: true,
+        resultAnnouncedAt: new Date().toISOString(),
+      };
+
+      // 1. Update local storage
+      const currentAsgs = dataStore.getAssignments().map((a) => (a.id === asg.id ? updatedAsg : a));
+      dataStore.saveAssignments(currentAsgs);
+      setAssignments(currentAsgs);
+
+      // 2. Sync to Supabase cloud
+      await supabaseService.upsertAssignment(updatedAsg);
+
+      showSuccess(
+        'Result Announced!',
+        `Official results for "${asg.title}" have been announced. All ${asgSubs.length} students can now view their marks and feedback in their student portal.`
+      );
+    } catch (err) {
+      console.error('Error announcing results:', err);
+      showError('Announcement Error', 'Could not sync result announcement to cloud.');
+    } finally {
+      setAnnouncingAsgId(null);
+    }
+  };
 
   // --- Wizard Form State (3 Steps) ---
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3>(1);
@@ -694,6 +741,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ currentTab }
 
                       {/* Right Action Buttons */}
                       <div className="flex flex-wrap items-center gap-2">
+                        {asg.isResultAnnounced ? (
+                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 font-extrabold text-xs shadow-2xs">
+                            <Check className="w-3.5 h-3.5 text-emerald-600" />
+                            Result Announced
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={announcingAsgId === asg.id}
+                            onClick={() => handleAnnounceResult(asg)}
+                            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-500 hover:to-amber-600 text-white font-extrabold text-xs shadow-sm transition active:scale-95 cursor-pointer disabled:opacity-50"
+                            title="Publish marks and instructor feedback to student portal once all submissions are graded"
+                          >
+                            {announcingAsgId === asg.id ? (
+                              <>
+                                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                <span>Announcing...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Megaphone className="w-3.5 h-3.5" />
+                                <span>Announce Result</span>
+                              </>
+                            )}
+                          </button>
+                        )}
+
                         <button
                           onClick={() => setActiveAssignmentForReview(asg)}
                           className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs shadow-sm transition"

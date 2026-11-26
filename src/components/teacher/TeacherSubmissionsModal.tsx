@@ -31,6 +31,9 @@ import {
   Image as ImageIcon,
   Play,
   RefreshCw,
+  Megaphone,
+  Check,
+  Loader2,
 } from 'lucide-react';
 import { TeacherGradingWorkspace } from './TeacherGradingWorkspace';
 import { getFileBlob, resolveFileUrl, downloadUploadedFile } from '@/lib/fileStorage';
@@ -90,6 +93,8 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [workspaceStartIndex, setWorkspaceStartIndex] = useState(0);
   const [dataVersion, setDataVersion] = useState(0);
+  const [currentAsg, setCurrentAsg] = useState<Assignment>(assignment);
+  const [isAnnouncingResult, setIsAnnouncingResult] = useState(false);
   // Start with initialSubmissions if provided (e.g. from Dashboard's 171 fetched submissions),
   // or fall back to dataStore, while cloud refresh executes.
   const [localSubmissions, setLocalSubmissions] = useState<Submission[]>(() => {
@@ -583,6 +588,68 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               <RefreshCw className={`w-3.5 h-3.5 text-purple-700 ${isCloudRefreshing ? 'animate-spin' : ''}`} />
               <span>{isCloudRefreshing ? 'Syncing...' : 'Sync Cloud'}</span>
             </button>
+
+            {/* Announce Result Button */}
+            {currentAsg.isResultAnnounced ? (
+              <span className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-extrabold shadow-2xs">
+                <Check className="w-3.5 h-3.5 text-emerald-700" />
+                <span>Result Announced</span>
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={isAnnouncingResult}
+                onClick={async () => {
+                  if (allSubmissions.length === 0) {
+                    showError('No Submissions', 'No student submissions recorded yet to announce results.');
+                    return;
+                  }
+                  const unGraded = allSubmissions.filter((s) => s.status !== 'graded');
+                  if (unGraded.length > 0) {
+                    showError(
+                      'Grading Incomplete',
+                      `${unGraded.length} student submission${unGraded.length > 1 ? 's are' : ' is'} pending evaluation. Please grade all submissions before announcing results.`
+                    );
+                    return;
+                  }
+                  setIsAnnouncingResult(true);
+                  try {
+                    const updatedAsg: Assignment = {
+                      ...currentAsg,
+                      isResultAnnounced: true,
+                      resultAnnouncedAt: new Date().toISOString(),
+                    };
+                    const currentAsgs = dataStore.getAssignments().map((a) => (a.id === currentAsg.id ? updatedAsg : a));
+                    dataStore.saveAssignments(currentAsgs);
+                    setCurrentAsg(updatedAsg);
+                    await supabaseService.upsertAssignment(updatedAsg);
+                    showSuccess(
+                      'Result Announced!',
+                      `Official results announced! All ${allSubmissions.length} students can now view their marks and remarks in their portal.`
+                    );
+                  } catch (err) {
+                    console.error('Error announcing results:', err);
+                    showError('Announcement Error', 'Could not sync result announcement to cloud.');
+                  } finally {
+                    setIsAnnouncingResult(false);
+                  }
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-extrabold transition shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Release grades to student portals once all students are evaluated"
+              >
+                {isAnnouncingResult ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-700" />
+                    <span>Announcing...</span>
+                  </>
+                ) : (
+                  <>
+                    <Megaphone className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Announce Result</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {/* Export Official Award List (CSV) */}
             <button
