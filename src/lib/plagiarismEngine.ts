@@ -47,11 +47,59 @@ const PROGRAMMING_KEYWORDS = new Set([
   'select', 'from', 'where', 'insert', 'update', 'delete', 'table', 'create'
 ]);
 
+// Scanner app watermarks that must NEVER trigger peer plagiarism matches
+const SCANNER_WATERMARKS = [
+  'camscanner', 'scanned with', 'wps office', 'adobe scan',
+  'docscanner', 'tapscanner', 'pdf scanner', 'photo scanner',
+  'fast scanner', 'clear scanner', 'genius scan', 'simple scan'
+];
+
+/**
+ * Removes scanner watermarks and mobile scan artifacts
+ */
+export function cleanScannerArtifacts(text: string): string {
+  if (!text) return '';
+  let cleaned = text;
+  for (const mark of SCANNER_WATERMARKS) {
+    const reg = new RegExp(mark, 'gi');
+    cleaned = cleaned.replace(reg, ' ');
+  }
+  return cleaned.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Strips universal programming boilerplate (headers, standard namespaces, main wrapper, return 0)
+ * so that two students using standard compiler templates are never accused of plagiarism.
+ */
+export function stripCodeBoilerplate(code: string): string {
+  if (!code) return '';
+  let cleaned = code;
+  // C/C++ Preprocessor includes (#include <iostream>, etc.)
+  cleaned = cleaned.replace(/^\s*#\s*include\s*[<"][^>"\n]+[>"]/gim, ' ');
+  // C++ Using namespace
+  cleaned = cleaned.replace(/^\s*using\s+namespace\s+\w+\s*;/gim, ' ');
+  // C/C++/Java main function signatures
+  cleaned = cleaned.replace(/\b(?:int|void)\s+main\s*\([^)]*\)\s*\{?/gim, ' ');
+  cleaned = cleaned.replace(/\bpublic\s+static\s+void\s+main\s*\([^)]*\)\s*\{?/gim, ' ');
+  // Return 0 / return statements for main
+  cleaned = cleaned.replace(/\breturn\s+0\s*;/gim, ' ');
+  // Standard Java package / import
+  cleaned = cleaned.replace(/^\s*package\s+[\w.]+\s*;/gim, ' ');
+  cleaned = cleaned.replace(/^\s*import\s+[\w.*]+\s*;/gim, ' ');
+  // Python main guard & common imports
+  cleaned = cleaned.replace(/if\s+__name__\s*==\s*['"]__main__['"]\s*:/gim, ' ');
+  cleaned = cleaned.replace(/^\s*import\s+[\w, ]+/gim, ' ');
+  cleaned = cleaned.replace(/^\s*from\s+[\w.]+\s+import\s+[\w*, ]+/gim, ' ');
+  // Strip empty enclosing braces
+  cleaned = cleaned.replace(/[{}]/g, ' ');
+  return cleaned.replace(/\s+/g, ' ').trim();
+}
+
 /**
  * Normalizes text by removing non-alphanumeric noise and extra spaces
  */
 function normalizeText(text: string): string {
-  return text
+  return cleanScannerArtifacts(text)
     .toLowerCase()
     .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
@@ -125,14 +173,16 @@ export function computePeerPlagiarism(
   questionText?: string,
   targetSubmittedAt?: string
 ): PlagiarismScanResult {
-  if (!targetText || targetText.trim().length < 15) {
+  // 0. Clean scanner artifacts from target text and verify content threshold
+  const cleanedTarget = cleanScannerArtifacts(targetText);
+  if (!cleanedTarget || cleanedTarget.length < 60) {
     return {
       peerPlagiarismScore: 0,
       literalScore: 0,
       structuralCodeScore: 0,
       totalComparisons: peers.length,
       matchingSnippets: [],
-      summary: 'Insufficient text to perform a reliable comparison.',
+      summary: 'Insufficient digital text layer (Scanned Document or Mobile Screenshots). Automated peer text overlap suppressed to prevent false alarms. Visually inspect using Side-by-Side Dual PDF Viewer.',
       riskLevel: 'clean',
     };
   }
@@ -149,31 +199,61 @@ export function computePeerPlagiarism(
     };
   }
 
-  // 1. Whitelist Question Paper Content (Exclude teacher prompts from plagiarism)
-  const questionWords = questionText ? normalizeText(questionText).split(' ').filter(Boolean) : [];
+  // 1. Whitelist Question Paper Content & Strip Compiler Boilerplate
+  const strippedTarget = stripCodeBoilerplate(cleanedTarget);
+  if (!strippedTarget || strippedTarget.length < 25) {
+    return {
+      peerPlagiarismScore: 0,
+      literalScore: 0,
+      structuralCodeScore: 0,
+      totalComparisons: peers.length,
+      matchingSnippets: [],
+      summary: 'Authentic student work. Standard compiler headers, wrappers, and boilerplate templates successfully whitelisted.',
+      riskLevel: 'clean',
+    };
+  }
+
+  const questionWords = questionText ? normalizeText(stripCodeBoilerplate(questionText)).split(' ').filter(Boolean) : [];
   const questionShingles = createShingles(questionWords, 4);
 
-  const questionCodeTokens = questionText ? tokenizeCode(questionText) : [];
+  const questionCodeTokens = questionText ? tokenizeCode(stripCodeBoilerplate(questionText)) : [];
   const questionCodeShingles = createShingles(questionCodeTokens, 4);
 
-  // 2. Prepare Target Document Shingles
-  const targetWords = normalizeText(targetText).split(' ').filter(Boolean);
+  // 2. Prepare Target Document Shingles (From Boilerplate-Stripped Content)
+  const targetWords = normalizeText(strippedTarget).split(' ').filter(Boolean);
   const targetShingles = createShingles(targetWords, 4);
   const cleanTargetTextShingles = new Set<string>();
   targetShingles.forEach((s) => {
-    if (!questionShingles.has(s)) cleanTargetTextShingles.add(s);
+    if (!questionShingles.has(s)) {
+      cleanTargetTextShingles.add(s);
+    }
   });
 
   // Target Code Tokens (MOSS)
-  const isTargetCode = isCodeContent(targetText);
-  const targetCodeTokens = tokenizeCode(targetText);
+  const isTargetCode = isCodeContent(cleanedTarget);
+  const targetCodeTokens = tokenizeCode(strippedTarget);
   const targetCodeShingles = createShingles(targetCodeTokens, 4);
   const cleanTargetCodeShingles = new Set<string>();
   targetCodeShingles.forEach((s) => {
-    if (!questionCodeShingles.has(s)) cleanTargetCodeShingles.add(s);
+    if (!questionCodeShingles.has(s)) {
+      cleanTargetCodeShingles.add(s);
+    }
   });
 
-  const targetSentences = extractSentences(targetText);
+  // If after removing prompts & boilerplate there are fewer than 4 distinct shingles, student work is too short or standard
+  if (cleanTargetTextShingles.size < 4 && cleanTargetCodeShingles.size < 4) {
+    return {
+      peerPlagiarismScore: 0,
+      literalScore: 0,
+      structuralCodeScore: 0,
+      totalComparisons: peers.length,
+      matchingSnippets: [],
+      summary: 'Authentic student work. Standard compiler headers and question template prompts successfully filtered.',
+      riskLevel: 'clean',
+    };
+  }
+
+  const targetSentences = extractSentences(strippedTarget);
 
   let highestScore = 0;
   let highestLiteralScore = 0;
@@ -185,29 +265,37 @@ export function computePeerPlagiarism(
 
   // 3. Pairwise Comparison Against All Peers
   for (const peer of peers) {
-    if (!peer.text || peer.text.trim().length < 15) continue;
+    const cleanedPeer = cleanScannerArtifacts(peer.text || '');
+    if (!cleanedPeer || cleanedPeer.length < 50) continue;
+
+    const strippedPeer = stripCodeBoilerplate(cleanedPeer);
+    if (!strippedPeer || strippedPeer.length < 25) continue;
 
     // A. Literal Text Shingle Overlap
-    const peerWords = normalizeText(peer.text).split(' ').filter(Boolean);
+    const peerWords = normalizeText(strippedPeer).split(' ').filter(Boolean);
     const peerShingles = createShingles(peerWords, 4);
     let literalMatches = 0;
     cleanTargetTextShingles.forEach((sh) => {
       if (peerShingles.has(sh)) literalMatches++;
     });
-    const peerLiteralScore = cleanTargetTextShingles.size > 0
+
+    // Require at least 3 distinct matching shingles to count toward literal score
+    const peerLiteralScore = cleanTargetTextShingles.size >= 4 && literalMatches >= 3
       ? Math.round((literalMatches / cleanTargetTextShingles.size) * 100)
       : 0;
 
     // B. MOSS Structural Code Overlap
     let peerStructuralScore = 0;
-    if (isTargetCode && isCodeContent(peer.text)) {
-      const peerCodeTokens = tokenizeCode(peer.text);
+    if (isTargetCode && isCodeContent(cleanedPeer)) {
+      const peerCodeTokens = tokenizeCode(strippedPeer);
       const peerCodeShingles = createShingles(peerCodeTokens, 4);
       let codeMatches = 0;
       cleanTargetCodeShingles.forEach((sh) => {
         if (peerCodeShingles.has(sh)) codeMatches++;
       });
-      peerStructuralScore = cleanTargetCodeShingles.size > 0
+
+      // Require at least 3 distinct matching code AST shingles
+      peerStructuralScore = cleanTargetCodeShingles.size >= 4 && codeMatches >= 3
         ? Math.round((codeMatches / cleanTargetCodeShingles.size) * 100)
         : 0;
     }
@@ -224,16 +312,16 @@ export function computePeerPlagiarism(
       matchedPeerObj = peer;
     }
 
-    // C. Extract Matching Snippets for Visual Diff
-    if (compositeScore >= 12) {
-      const peerSentences = extractSentences(peer.text);
+    // C. Extract Matching Snippets for Visual Diff (Strict Filter)
+    if (compositeScore >= 18) {
+      const peerSentences = extractSentences(strippedPeer);
       for (const tSent of targetSentences) {
         const normT = normalizeText(tSent);
-        if (normT.length < 25) continue;
+        if (normT.length < 20) continue;
 
         for (const pSent of peerSentences) {
           const normP = normalizeText(pSent);
-          if (normP.length < 25) continue;
+          if (normP.length < 20) continue;
 
           // Check exact text overlap
           if (normP.includes(normT) || normT.includes(normP)) {
@@ -251,7 +339,7 @@ export function computePeerPlagiarism(
           // Check structural code collision (MOSS)
           const tokensT = tokenizeCode(tSent).join(' ');
           const tokensP = tokenizeCode(pSent).join(' ');
-          if (tokensT.length > 25 && (tokensP.includes(tokensT) || tokensT.includes(tokensP))) {
+          if (tokensT.length > 28 && (tokensP.includes(tokensT) || tokensT.includes(tokensP))) {
             allMatchingSnippets.push({
               studentSnippet: tSent,
               peerSnippet: pSent,
@@ -290,11 +378,11 @@ export function computePeerPlagiarism(
     }
   }
 
-  // 5. Determine Risk Level & Qualitative Summary
+  // 5. Determine Risk Level & Qualitative Summary (Verified Multi-Block Safeguard)
   let riskLevel: 'clean' | 'moderate' | 'critical' = 'clean';
   let summary = `Original student work. No significant peer overlap detected across ${peers.length} classmate submissions.`;
 
-  if (highestScore > 35) {
+  if (highestScore > 40 && allMatchingSnippets.length >= 2) {
     riskLevel = 'critical';
     const originNote = chronologicalVerdict === 'derivative_copy'
       ? ` [TIMELINE ATTRIBUTION: Student submitted ${timeDifferenceMinutes}m later than Roll #${highestPeerRoll} — likely derivative copy]`
@@ -307,9 +395,9 @@ export function computePeerPlagiarism(
     } else {
       summary = `Critical verbatim overlap detected (${highestScore}%) matching peer Roll #${highestPeerRoll} (${highestPeerName}). Immediate faculty review recommended.${originNote}`;
     }
-  } else if (highestScore > 15) {
+  } else if (highestScore > 20) {
     riskLevel = 'moderate';
-    summary = `Moderate similarity (${highestScore}%) detected with peer Roll #${highestPeerRoll} (${highestPeerName}). Check if common templates, formulas, or headers were shared.`;
+    summary = `Moderate similarity (${highestScore}%) detected with peer Roll #${highestPeerRoll} (${highestPeerName}). Check if common formulas, algorithm steps, or shared assignment instructions were used.`;
   }
 
   return {

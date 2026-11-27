@@ -300,12 +300,46 @@ for (const la of visibleAssignments) {
 }
 assert(!mergedSimulatedAsgs.some((a) => a.id === 'asg-test-deleted'), 'Cloud sync engine refuses to resurrect deleted assignments back to Supabase/localStorage', 'Zombie resurrection permanently blocked');
 
+// -----------------------------------------------------------------------------
+// TEST 7: PLAGIARISM IMMUNITY TO CAMSCANNER WATERMARKS & COMMON CODE BOILERPLATE
+// -----------------------------------------------------------------------------
+console.log('\nTEST SUITE 7: Plagiarism Engine CamScanner & Boilerplate Immunity');
+const { computePeerPlagiarism } = await import('../src/lib/plagiarismEngine.ts');
+
+const camScannerStudentA = "CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner";
+const camScannerStudentB = "CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner CamScanner";
+
+const scanResCamScanner = computePeerPlagiarism(camScannerStudentA, [
+  { rollNumber: 17, name: 'Abeera Khalid', text: camScannerStudentB, submittedAt: '2026-11-23T10:00:00Z' }
+], 'Programming assignment', '2026-11-23T12:00:00Z');
+
+assert(scanResCamScanner.peerPlagiarismScore === 0, 'CamScanner watermark documents receive 0% plagiarism score', `Score: ${scanResCamScanner.peerPlagiarismScore}% (Immunity confirmed)`);
+assert(scanResCamScanner.riskLevel === 'clean', 'CamScanner watermark documents are marked as clean', `Risk level: ${scanResCamScanner.riskLevel}`);
+
+const boilerplateCodeA = '#include <iostream>\n#include <iomanip>\nusing namespace std;\nint main() {\n  return 0;\n}';
+const boilerplateCodeB = '#include <iostream>\n#include <iomanip>\nusing namespace std;\nint main() {\n  return 0;\n}';
+const scanResBoilerplate = computePeerPlagiarism(boilerplateCodeA, [
+  { rollNumber: 18, name: 'Classmate', text: boilerplateCodeB }
+], 'C++ Task');
+
+assert(scanResBoilerplate.peerPlagiarismScore === 0, 'Standard C++ compiler boilerplate headers receive 0% plagiarism score', `Score: ${scanResBoilerplate.peerPlagiarismScore}% (Whitelisted)`);
+
+// Test genuine code copy
+const uniqueCodeA = 'int computeTaxDiscount(float income, int dependents) {\n  float tax = income * 0.15;\n  if (dependents > 3) tax -= 500;\n  return tax;\n}';
+const uniqueCodeB = 'int computeTaxDiscount(float income, int dependents) {\n  float tax = income * 0.15;\n  if (dependents > 3) tax -= 500;\n  return tax;\n}';
+const scanResGenuineCopy = computePeerPlagiarism(uniqueCodeA, [
+  { rollNumber: 19, name: 'Copied Student', text: uniqueCodeB, submittedAt: '2026-11-23T08:00:00Z' }
+], 'C++ Task', '2026-11-23T09:00:00Z');
+
+assert(scanResGenuineCopy.peerPlagiarismScore > 50, 'Actual duplicated algorithmic functions are caught accurately', `Score: ${scanResGenuineCopy.peerPlagiarismScore}% (Caught)`);
+
 console.log('\n================================================================');
 if (allPassed) {
-  console.log('  >>> RESULT: ALL 15 TESTS PASSED WITH 100% SUCCESS <<<');
+  console.log('  >>> RESULT: ALL 19 TESTS PASSED WITH 100% SUCCESS <<<');
   console.log('  The submission quota bug is completely resolved and verified.');
   console.log('  Assignment deletion is permanent and immune to zombie resurrection.');
   console.log('  Teacher file downloading remains completely safe and functional.');
+  console.log('  Plagiarism engine is strictly immune to watermarks and boilerplate false alarms.');
 } else {
   console.error('  >>> RESULT: SOME TESTS FAILED <<<');
 }

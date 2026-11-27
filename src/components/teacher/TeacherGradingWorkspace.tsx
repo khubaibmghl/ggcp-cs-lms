@@ -981,38 +981,49 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
               {corrReport ? (
                 <div className="space-y-3">
                   {/* Recommended Score Banner */}
-                  <div
-                    className={`p-4 rounded-2xl border flex items-center justify-between ${
-                      corrReport.overallScore === 0
-                        ? 'bg-rose-950/60 border-rose-500/50 text-white'
-                        : 'bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 border border-emerald-500/30 text-white'
-                    }`}
-                  >
-                    <div>
-                      <span className="text-[10px] font-bold uppercase tracking-wider block opacity-80">
-                        {corrReport.overallScore === 0 ? '⚠️ Off-Topic / 0 Marks Detected' : 'Recommended Grade'}
-                      </span>
-                      <div className="flex items-baseline gap-2 mt-0.5">
-                        <span className="text-2xl font-black">{corrReport.overallScore}</span>
-                        <span className="text-xs opacity-75">/ {assignment.totalMarks} Marks</span>
-                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 font-bold ml-1">
-                          {corrReport.percentage}% • {corrReport.status}
-                        </span>
-                      </div>
-                    </div>
+                  {(() => {
+                    const isScannedDoc = corrReport.solutionSample?.includes('scanned pages') || corrReport.canonicalAnswerKeySummary?.includes('scanned pages');
+                    return (
+                      <div
+                        className={`p-4 rounded-2xl border flex items-center justify-between ${
+                          isScannedDoc
+                            ? 'bg-gradient-to-r from-indigo-950 via-slate-950 to-blue-950 border-indigo-500/50 text-white'
+                            : corrReport.overallScore === 0
+                            ? 'bg-rose-950/60 border-rose-500/50 text-white'
+                            : 'bg-gradient-to-r from-emerald-950 via-teal-950 to-slate-950 border border-emerald-500/30 text-white'
+                        }`}
+                      >
+                        <div>
+                          <span className="text-[10px] font-bold uppercase tracking-wider block opacity-80">
+                            {isScannedDoc
+                              ? '📷 Scanned Pages / IDE Screenshots Detected (Visual Review)'
+                              : corrReport.overallScore === 0
+                              ? '⚠️ Off-Topic / 0 Marks Detected'
+                              : 'Recommended Grade'}
+                          </span>
+                          <div className="flex items-baseline gap-2 mt-0.5">
+                            <span className="text-2xl font-black">{corrReport.overallScore}</span>
+                            <span className="text-xs opacity-75">/ {assignment.totalMarks} Marks</span>
+                            <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/20 font-bold ml-1">
+                              {isScannedDoc ? 'Visual Review Required' : `${corrReport.percentage}% • ${corrReport.status}`}
+                            </span>
+                          </div>
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentScore(corrReport.overallScore);
-                        setCurrentFeedback(corrReport.instructorFeedbackDraft);
-                      }}
-                      className="px-3 py-1.5 rounded-xl bg-white text-slate-900 font-extrabold text-xs hover:bg-slate-100 transition shadow-xs flex items-center gap-1 cursor-pointer"
-                    >
-                      <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
-                      Auto-Fill Form
-                    </button>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCurrentScore(corrReport.overallScore);
+                            setCurrentFeedback(corrReport.instructorFeedbackDraft);
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-white text-slate-900 font-extrabold text-xs hover:bg-slate-100 transition shadow-xs flex items-center gap-1 cursor-pointer"
+                        >
+                          <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                          Auto-Fill Form
+                        </button>
+                      </div>
+                    );
+                  })()}
 
                   {/* Highlights / Strengths / Key Suggestions */}
                   {corrReport.areasForImprovement && corrReport.areasForImprovement.length > 0 && (

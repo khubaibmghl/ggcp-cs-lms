@@ -235,8 +235,38 @@ function performDeterministicEvaluation(
   studentName: string
 ): EvaluationResult {
   const parsedQuestions = parseQuestionsFromPaper(questionText);
-  const qCount = parsedQuestions.length;
+  const qCount = parsedQuestions.length || 1;
   const marksPerQuestion = totalMarks / qCount;
+
+  // Handle scanned documents or IDE screenshot uploads where no digital text stream exists
+  const isImageOrScan = !solutionText || solutionText.trim().length < 25;
+  if (isImageOrScan) {
+    return {
+      overallScore: 0,
+      totalMarks,
+      percentage: 0,
+      status: 'Needs Improvement',
+      questionPaperSample: questionText.slice(0, 300),
+      solutionSample: '(Document contains scanned pages or IDE screenshots with no machine-readable digital text layer)',
+      canonicalAnswerKeySummary: 'Canonical requirements extracted. Submission contains image/scanned pages requiring visual code review.',
+      questionBreakdown: parsedQuestions.map((q) => ({
+        questionNumber: q.number,
+        prompt: q.prompt,
+        marksAwarded: 0,
+        maxMarks: Number(marksPerQuestion.toFixed(1)),
+        status: 'Needs Improvement' as const,
+        feedback: 'Scanned document / IDE compiler screenshots detected. Visual code inspection required from the Document View on the left.',
+        keyConceptsCovered: ['Visual Code Review Required'],
+        modelSolutionSnippet: discoverModelSolution(q.prompt, subjectCode).modelSolution || 'Valid compilable implementation required.',
+        studentEvidenceSnippet: 'Document contains embedded image/screenshot pages. Inspect visual code in Document View.',
+        evaluationRubricCriteria: ['Verify logic in screenshots', 'Inspect syntax on pages', 'Award marks via Grade Award form below'],
+      })),
+      strengths: ['Document successfully submitted and viewable in Document View.'],
+      areasForImprovement: ['Scanned image pages detected. Connect Gemini API key for automated multimodal image vision, or award marks manually using the form below.'],
+      instructorFeedbackDraft: 'Student submitted scanned/screenshot pages of their solution. Please visually verify the code in the left viewer and adjust marks accordingly.',
+      aiEngineUsed: 'Academic Structural Evaluator (Visual Inspection Mode)',
+    };
+  }
 
   const solNorm = solutionText.toLowerCase();
   const solWords = solNorm.split(/[^a-z0-9_#+]+/).filter((w) => w.length > 2);
@@ -636,7 +666,7 @@ Return ONLY a valid JSON object matching this schema:
     // 4. Grounded Academic Structural Evaluation (Strict Rule-Based)
     const evaluation = performDeterministicEvaluation(
       questionText,
-      solutionText,
+      cleanedSolutionText,
       totalMarks,
       subjectCode,
       studentName
