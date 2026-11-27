@@ -744,34 +744,55 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
               activeFileUri ? (
                 isPdf ? (
                   <div className="w-full h-full min-h-[550px] flex flex-col rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-xl">
-                    <object
-                      data={blobUrl || activeFileUri}
-                      type="application/pdf"
-                      className="w-full h-full min-h-[550px] border-0 flex-1 bg-white"
-                    >
+                    {/* If remote URL (e.g. Cloudinary/HTTPS), embed via Google Docs PDF viewer or native embed */}
+                    {activeFileUri.startsWith('http') ? (
                       <iframe
-                        src={blobUrl || activeFileUri}
+                        src={`https://docs.google.com/viewer?url=${encodeURIComponent(activeFileUri)}&embedded=true`}
                         className="w-full h-full min-h-[550px] border-0 bg-white"
                         title="Student Submitted PDF"
+                      />
+                    ) : (
+                      <object
+                        data={blobUrl || activeFileUri}
+                        type="application/pdf"
+                        className="w-full h-full min-h-[550px] border-0 flex-1 bg-white"
                       >
-                        <div className="p-8 text-center text-slate-300 space-y-3 bg-slate-900 h-full flex flex-col items-center justify-center">
-                          <FileText className="w-12 h-12 text-purple-400" />
-                          <p className="text-xs font-bold text-white">Direct browser PDF frame blocked</p>
-                          <p className="text-[11px] text-slate-400 max-w-xs">
-                            Your browser prefers viewing external PDFs in a tab or via direct download.
-                          </p>
-                          <a
-                            href={activeFileUri}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold transition shadow-xs inline-flex items-center gap-1.5"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                            <span>Open PDF In New Tab</span>
-                          </a>
-                        </div>
-                      </iframe>
-                    </object>
+                        <iframe
+                          src={blobUrl || activeFileUri}
+                          className="w-full h-full min-h-[550px] border-0 bg-white"
+                          title="Student Submitted PDF"
+                        >
+                          <div className="p-8 text-center text-slate-300 space-y-3 bg-slate-900 h-full flex flex-col items-center justify-center">
+                            <FileText className="w-12 h-12 text-purple-400" />
+                            <p className="text-xs font-bold text-white">Browser Blocked Embedded Preview</p>
+                            <p className="text-[11px] text-slate-400 max-w-xs">
+                              Click below to view the PDF directly or download it.
+                            </p>
+                            <div className="flex items-center gap-2">
+                              {activeFile && (
+                                <button
+                                  type="button"
+                                  onClick={() => downloadUploadedFile(activeFile, `${activeSub?.studentName || 'Student'}_Solution.pdf`)}
+                                  className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold transition shadow-xs inline-flex items-center gap-1.5"
+                                >
+                                  <Download className="w-3.5 h-3.5" />
+                                  <span>Download PDF</span>
+                                </button>
+                              )}
+                              <a
+                                href={blobUrl || activeFileUri}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 text-xs font-bold transition inline-flex items-center gap-1.5"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                                <span>Open In New Tab</span>
+                              </a>
+                            </div>
+                          </div>
+                        </iframe>
+                      </object>
+                    )}
                   </div>
                 ) : isImage ? (
                   <div className="space-y-3">

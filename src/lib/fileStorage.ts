@@ -163,11 +163,42 @@ export function resolveSyncFileUrl(file?: UploadedFile | null): string {
 export async function downloadFileUrl(src: string, fileName: string): Promise<void> {
   if (!src) return;
 
+  // Sanitize filename to ensure proper extension
+  let safeFileName = fileName || 'document.pdf';
+  if (!safeFileName.includes('.')) {
+    if (src.includes('application/pdf') || src.includes('.pdf')) {
+      safeFileName += '.pdf';
+    } else if (src.includes('word') || src.includes('.docx')) {
+      safeFileName += '.docx';
+    } else {
+      safeFileName += '.pdf';
+    }
+  }
+
   // 1. Base64 Data URL or local Object URL
   if (src.startsWith('data:') || src.startsWith('blob:')) {
+    let finalSrc = src;
+    // If base64 data URL, convert to real Blob so Windows and browsers always recognize the file type
+    if (src.startsWith('data:')) {
+      try {
+        const parts = src.split(';base64,');
+        const contentType = parts[0].replace('data:', '') || 'application/pdf';
+        const raw = window.atob(parts[1]);
+        const uInt8Array = new Uint8Array(raw.length);
+        for (let i = 0; i < raw.length; ++i) {
+          uInt8Array[i] = raw.charCodeAt(i);
+        }
+        const blob = new Blob([uInt8Array], { type: contentType });
+        finalSrc = URL.createObjectURL(blob);
+        setTimeout(() => URL.revokeObjectURL(finalSrc), 60000);
+      } catch {
+        finalSrc = src;
+      }
+    }
+
     const a = document.createElement('a');
-    a.href = src;
-    a.download = fileName;
+    a.href = finalSrc;
+    a.download = safeFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -175,17 +206,19 @@ export async function downloadFileUrl(src: string, fileName: string): Promise<vo
   }
 
   // 2. Remote URL (e.g. Cloudinary):
-  // Modern browsers ignore the `download` attribute on cross-origin URLs.
-  // Converting it to a same-origin blob guarantees the browser enforces the exact filename & extension!
   try {
     const response = await fetch(src);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
+    // Enforce matching MIME type if blob is octet-stream
+    const finalBlob = blob.type === 'application/octet-stream' && safeFileName.endsWith('.pdf')
+      ? new Blob([blob], { type: 'application/pdf' })
+      : blob;
+    const blobUrl = URL.createObjectURL(finalBlob);
 
     const a = document.createElement('a');
     a.href = blobUrl;
-    a.download = fileName;
+    a.download = safeFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -196,14 +229,14 @@ export async function downloadFileUrl(src: string, fileName: string): Promise<vo
     console.warn('[LMS File Vault] Direct blob fetch failed, falling back to direct navigation:', err);
     let fallbackUrl = src;
     if (fallbackUrl.includes('cloudinary.com') && fallbackUrl.includes('/upload/')) {
-      const cleanName = encodeURIComponent(fileName);
+      const cleanName = encodeURIComponent(safeFileName);
       fallbackUrl = fallbackUrl.replace('/upload/', `/upload/fl_attachment:${cleanName}/`);
     }
     const a = document.createElement('a');
     a.href = fallbackUrl;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
-    a.download = fileName;
+    a.download = safeFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

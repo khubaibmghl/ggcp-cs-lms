@@ -44,9 +44,8 @@ export async function GET(req: NextRequest) {
   const supabase = createClient(supabaseUrl, supabaseKey);
 
   try {
-    // Select specific lightweight columns ONLY — deliberately skip the heavy `files` JSONB
-    // column which may contain legacy multi-MB base64 strings causing statement timeouts.
-    // File URLs are still available via the `file_url` column and the sanitized `files` metadata.
+    // Select specific lightweight columns matching public.submissions schema
+    // Note: 'files' is lightweight metadata (name, size, type, fileKey/url) after our client fix
     const selectColumns = [
       'id',
       'assignment_id',
@@ -60,8 +59,8 @@ export async function GET(req: NextRequest) {
       'marks',
       'feedback',
       'text_submission',
+      'files',
       'integrity_report',
-      'file_url',
       'ai_suggested_score',
       'test_cases_passed',
       'test_cases_total',

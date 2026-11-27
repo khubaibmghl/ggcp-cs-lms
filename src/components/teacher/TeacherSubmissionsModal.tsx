@@ -161,10 +161,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
           studentSemester: Number(row.student_semester),
           studentSection: row.student_section,
           textSubmission: row.text_submission || '',
-          files: row.file_url
-            ? [{ name: 'submission_file', type: '', size: 0, url: row.file_url }]
-            : Array.isArray(row.files)
+          files: Array.isArray(row.files) && row.files.length > 0
             ? row.files
+            : row.file_url
+            ? [{ name: 'submission_file.pdf', type: 'application/pdf', size: 0, url: row.file_url }]
             : [],
           submittedAt: row.submitted_at,
           status: row.status || 'submitted',
