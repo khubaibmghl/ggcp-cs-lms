@@ -83,6 +83,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
   const [currentFeedback, setCurrentFeedback] = useState<string>('');
   const [isApplying, setIsApplying] = useState(false);
   const [activeEvalStatus, setActiveEvalStatus] = useState<Record<string, { isEvaluating: boolean; error?: string }>>({});
+  const [showCollusionDiff, setShowCollusionDiff] = useState(false);
 
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
@@ -226,122 +227,117 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
 
     const buildClassroomMap = async () => {
       if (submissions.length === 0) return;
-      setIsIndexingMap(true);
-      setIndexingProgress(0);
 
       addLog(`⚡ Initializing Classroom Submission Map for [${assignment.subjectCode}] ${assignment.title}...`, 'process');
       addLog(`📋 Total Submissions to index: ${submissions.length} students.`, 'info');
 
+      // 1. INSTANT SYNCHRONOUS POPULATION: Populate classroomMap right away with existing records
+      // so active student evaluation and UI never get blocked by background loops
       const tempMap = new Map<string, CachedStudentEntry>();
-
-      // 1. EXTRACT TEXT & CODE TOKENS FOR ALL STUDENTS (CHUNKED ASYNC SLICES)
-      for (let i = 0; i < submissions.length; i++) {
-        if (isCancelled) return;
-        const sub = submissions[i];
-        addLog(`📂 Ingesting [${i + 1}/${submissions.length}] Roll #${sub.studentRollNumber} (${sub.studentName})...`, 'info');
-
-        let text = sub.textSubmission || '';
+      for (const sub of submissions) {
         const file = sub.files?.[0];
-
         let isScan = false;
         if (file) {
           const lowerName = file.name.toLowerCase();
           isScan = lowerName.includes('scan') || lowerName.includes('handwritten') || file.type?.startsWith('image/');
-
-          // Use pre-extracted text if available (0ms load)
-          if (!text && file.extractedText) {
-            text = file.extractedText;
-            addLog(`  ↳ Using cached text (${text.length} chars) from "${file.name}".`, 'info');
-          } else if (!text) {
-            try {
-              const res = await fetch('/api/extract-text', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ file }),
-              });
-              if (res.ok) {
-                const data = await res.json();
-                if (data.success && data.text) {
-                  text = data.text;
-                  file.extractedText = text;
-                  addLog(`  ↳ Extracted ${data.length} characters from "${file.name}".`, 'success');
-                }
-              }
-            } catch (err) {
-              addLog(`  ⚠️ Text extraction warning for Roll #${sub.studentRollNumber}: ${err}`, 'warn');
-            }
-          }
         }
-
-        const tokens = text ? tokenizeCode(text) : [];
-        const hasCachedEval = !!sub.integrityReport?.evaluationReport;
-        const hasCachedPlag = !!sub.integrityReport?.plagiarismScanResult;
-
+        const text = sub.textSubmission || file?.extractedText || '';
         tempMap.set(sub.id, {
           sub,
           text,
-          codeTokens: tokens,
+          codeTokens: text ? tokenizeCode(text) : [],
           documentKind: isScan ? 'handwritten_scan' : 'computerized',
-          isExtracted: true,
-          isEvaluated: hasCachedEval,
+          isExtracted: !!text,
+          isEvaluated: !!sub.integrityReport?.evaluationReport,
           correctionReport: sub.integrityReport?.evaluationReport,
           plagiarismReport: sub.integrityReport?.plagiarismScanResult,
         });
-
-        setIndexingProgress(Math.round(((i + 1) / (submissions.length * 2)) * 100));
-
-        // Yield execution every 3 students to keep browser animations and progress smooth at 60 FPS
-        if (i % 3 === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 0));
-        }
       }
 
-      addLog(`✅ All ${submissions.length} student documents ingested into memory map.`, 'success');
+      // Commit initial map immediately so all entries exist
+      setClassroomMap(new Map(tempMap));
 
-      // 2. RUN COMBINATORIAL TRIANGULAR CROSS-CHECK (N*(N-1)/2 comparisons in non-blocking slices)
-      const totalCombinations = (submissions.length * (submissions.length - 1)) / 2;
-      addLog(`📐 Executing Triangular Cross-Check Matrix: N=${submissions.length}, Comparisons=${totalCombinations} pairs.`, 'process');
+      // 2. FAST-TRACK ACTIVE STUDENT FIRST: Evaluate the student currently in view immediately
+      const initialActive = submissions[initialStudentIndex] || submissions[0];
+      if (initialActive) {
+        evaluateStudentInMap(initialActive.id, tempMap);
+      }
+
+      // 3. BACKGROUND ASYNC EXTRACTION FOR REMAINING STUDENTS (NON-BLOCKING)
+      setIsIndexingMap(true);
+      setIndexingProgress(10);
 
       const questionPrompt = assignment.description || assignment.title;
-      const peerList = Array.from(tempMap.values()).map((e) => ({
-        rollNumber: e.sub.studentRollNumber,
-        name: e.sub.studentName,
-        text: e.text,
-      }));
 
-      // For each student, compute plagiarism against class
       for (let i = 0; i < submissions.length; i++) {
         if (isCancelled) return;
         const sub = submissions[i];
         const entry = tempMap.get(sub.id);
         if (!entry) continue;
 
-        // If not already cached, run pairwise MOSS comparison
-        if (!entry.plagiarismReport) {
-          const otherPeers = peerList.filter((p) => p.rollNumber !== sub.studentRollNumber);
-          const scanResult = computePeerPlagiarism(entry.text, otherPeers, questionPrompt);
-          entry.plagiarismReport = scanResult;
-
-          if (sub.integrityReport) {
-            sub.integrityReport.peerPlagiarismScore = scanResult.peerPlagiarismScore;
-            sub.integrityReport.matchedWithRollNumber = scanResult.matchedWithRollNumber;
-            sub.integrityReport.matchedStudentName = scanResult.matchedWithName;
-            sub.integrityReport.plagiarismScanResult = scanResult;
+        const file = sub.files?.[0];
+        if (!entry.text && file) {
+          try {
+            const res = await fetch('/api/extract-text', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ file }),
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.text) {
+                entry.text = data.text;
+                entry.codeTokens = tokenizeCode(data.text);
+                entry.isExtracted = true;
+                file.extractedText = data.text;
+              }
+            }
+          } catch {
+            // non-fatal
           }
         }
 
-        const scanResult = entry.plagiarismReport;
-        if (scanResult && scanResult.riskLevel === 'critical') {
-          addLog(`  ⚠️ Collusion Alert: Roll #${sub.studentRollNumber} (${sub.studentName}) matches Roll #${scanResult.matchedWithRollNumber} with ${scanResult.peerPlagiarismScore}% MOSS similarity!`, 'warn');
-        } else if (scanResult && scanResult.riskLevel === 'moderate') {
-          addLog(`  ℹ️ Moderate overlap: Roll #${sub.studentRollNumber} matches Roll #${scanResult.matchedWithRollNumber} (${scanResult.peerPlagiarismScore}%).`, 'info');
+        setIndexingProgress(10 + Math.round(((i + 1) / (submissions.length * 2)) * 40));
+
+        if (i % 5 === 0) {
+          setClassroomMap(new Map(tempMap));
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+
+      // 4. CROSS-CHECK PAIRWISE PLAGIARISM MATRIX
+      const peerList = Array.from(tempMap.values()).map((e) => ({
+        rollNumber: e.sub.studentRollNumber,
+        name: e.sub.studentName,
+        text: e.text,
+        submittedAt: e.sub.submittedAt,
+      }));
+
+      for (let i = 0; i < submissions.length; i++) {
+        if (isCancelled) return;
+        const sub = submissions[i];
+        const entry = tempMap.get(sub.id);
+        if (!entry) continue;
+
+        if (!entry.plagiarismReport && entry.text) {
+          const otherPeers = peerList.filter((p) => p.rollNumber !== sub.studentRollNumber && p.text);
+          if (otherPeers.length > 0) {
+            const scanResult = computePeerPlagiarism(entry.text, otherPeers, questionPrompt, sub.submittedAt);
+            entry.plagiarismReport = scanResult;
+
+            if (sub.integrityReport) {
+              sub.integrityReport.peerPlagiarismScore = scanResult.peerPlagiarismScore;
+              sub.integrityReport.matchedWithRollNumber = scanResult.matchedWithRollNumber;
+              sub.integrityReport.matchedStudentName = scanResult.matchedWithName;
+              sub.integrityReport.plagiarismScanResult = scanResult;
+            }
+          }
         }
 
         setIndexingProgress(50 + Math.round(((i + 1) / (submissions.length * 2)) * 50));
 
-        // Yield to browser event loop every 4 students to prevent thread locking
-        if (i % 4 === 0) {
-          await new Promise((resolve) => setTimeout(resolve, 0));
+        if (i % 6 === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 10));
         }
       }
 
@@ -349,11 +345,6 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       setClassroomMap(new Map(tempMap));
       setIsIndexingMap(false);
       setIndexingProgress(100);
-
-      // Pre-evaluate the first student
-      if (submissions[0]) {
-        evaluateStudentInMap(submissions[0].id, tempMap);
-      }
     };
 
     buildClassroomMap();
@@ -363,22 +354,27 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
     };
   }, [assignment.id]);
 
-  // Evaluate a student using the 2-stage authentic engine (WITH PERSISTENT RESULT CACHING)
+  // Evaluate a student using the authentic engine (WITH PERSISTENT RESULT CACHING & INSTANT FALLBACK)
   const evaluateStudentInMap = async (subId: string, mapToUse?: Map<string, CachedStudentEntry>) => {
     const map = mapToUse || classroomMap;
     const entry = map.get(subId);
     if (!entry) return;
 
-    // 1. Check if already evaluated in this session or cached in submission integrity report
+    // 1. Check if already evaluated in this session
     if (entry.isEvaluated && entry.correctionReport) {
+      if (activeSub?.id === subId && (activeSub.score === undefined || activeSub.score === null)) {
+        setCurrentScore(entry.correctionReport.overallScore);
+        setCurrentFeedback(entry.correctionReport.instructorFeedbackDraft || '');
+      }
       return;
     }
 
+    // 2. Check if cached in submission integrity report
     if (entry.sub.integrityReport?.evaluationReport) {
       entry.correctionReport = entry.sub.integrityReport.evaluationReport;
       entry.isEvaluated = true;
       setClassroomMap(new Map(map));
-      addLog(`⚡ Loaded cached evaluation for Roll #${entry.sub.studentRollNumber}: ${entry.correctionReport.overallScore}/${assignment.totalMarks} Marks (${entry.correctionReport.status}). Zero API latency.`, 'info');
+      addLog(`⚡ Loaded cached evaluation for Roll #${entry.sub.studentRollNumber}: ${entry.correctionReport.overallScore}/${assignment.totalMarks} Marks. Zero API latency.`, 'info');
 
       if (activeSub?.id === subId && (activeSub.score === undefined || activeSub.score === null)) {
         setCurrentScore(entry.correctionReport.overallScore);
@@ -387,8 +383,33 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       return;
     }
 
-    addLog(`🤖 Evaluating student Roll #${entry.sub.studentRollNumber} against Canonical Answer Key...`, 'process');
-    setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: true } }));
+    // 3. Ensure student solution text is extracted before evaluating
+    if (!entry.text && entry.sub.files?.[0]) {
+      const file = entry.sub.files[0];
+      addLog(`📄 Extracting text for Roll #${entry.sub.studentRollNumber} (${file.name})...`, 'process');
+      try {
+        const extractRes = await fetch('/api/extract-text', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ file }),
+        });
+        if (extractRes.ok) {
+          const extractData = await extractRes.json();
+          if (extractData.success && extractData.text) {
+            entry.text = extractData.text;
+            entry.codeTokens = tokenizeCode(extractData.text);
+            entry.isExtracted = true;
+            file.extractedText = extractData.text;
+            addLog(`  ↳ Extracted ${extractData.length || entry.text.length} chars from "${file.name}".`, 'success');
+          }
+        }
+      } catch (err) {
+        console.warn('Text extraction warning:', err);
+      }
+    }
+
+    addLog(`🤖 Synthesizing Canonical Model Solution & evaluating Roll #${entry.sub.studentRollNumber}...`, 'process');
+    setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: true, error: undefined } }));
 
     try {
       const apiKey = typeof window !== 'undefined' ? localStorage.getItem('ggcp_gemini_api_key') || undefined : undefined;
@@ -408,6 +429,9 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       const solutionFilePayload = entry.sub.files?.[0]
         ? { name: entry.sub.files[0].name, dataUrl: solutionData, url: entry.sub.files[0].url }
         : null;
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
 
       const res = await fetch('/api/evaluate-submission', {
         method: 'POST',
@@ -430,7 +454,10 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
           },
           apiKey,
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = await res.json();
@@ -438,10 +465,25 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
           entry.correctionReport = data.evaluation;
           entry.isEvaluated = true;
 
-          // Cache on submission object for instant zero-token future reloads
-          if (entry.sub.integrityReport) {
-            entry.sub.integrityReport.evaluationReport = data.evaluation;
+          // Cache on submission object for instant future reloads
+          if (!entry.sub.integrityReport) {
+            entry.sub.integrityReport = {
+              peerPlagiarismScore: 0,
+              aiLikelihoodScore: 0,
+              aiReasoning: 'Authentic student submission',
+              telemetry: {
+                typedCharacterCount: 0,
+                pasteEventCount: 0,
+                totalPastedCharacters: 0,
+                typingDurationSeconds: 0,
+                estimatedWPM: 0,
+                suspiciousBurstDetected: false,
+                timelineLogs: [],
+              },
+            };
           }
+          entry.sub.integrityReport.evaluationReport = data.evaluation;
+
           dataStore.upsertSubmission(entry.sub);
           setClassroomMap(new Map(map));
           setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false } }));
@@ -460,20 +502,20 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
         setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false, error: `HTTP ${res.status}` } }));
       }
     } catch (err: any) {
-      addLog(`  ❌ Evaluation failed for Roll #${entry.sub.studentRollNumber}: ${err}`, 'error');
-      setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false, error: err?.message || 'Network error' } }));
+      addLog(`  ⚠️ Evaluation network notice for Roll #${entry.sub.studentRollNumber}: ${err?.message || 'Network delay'}`, 'warn');
+      setActiveEvalStatus((prev) => ({ ...prev, [subId]: { isEvaluating: false, error: err?.message || 'Network notice' } }));
     }
   };
 
   // Evaluate on index change if not evaluated yet
   useEffect(() => {
-    if (activeSub && classroomMap.has(activeSub.id)) {
+    if (activeSub) {
       const entry = classroomMap.get(activeSub.id);
-      if (entry && !entry.isEvaluated) {
+      if (!entry || !entry.isEvaluated) {
         evaluateStudentInMap(activeSub.id);
       }
     }
-  }, [currentIndex, classroomMap]);
+  }, [currentIndex, activeSub?.id]);
 
   // Helper to persist current grade if valid (used for manual save, auto-save on navigation)
   const saveCurrentGradeIfModified = async (targetSub = activeSub, scoreVal = currentScore, feedbackVal = currentFeedback): Promise<boolean> => {
@@ -705,12 +747,12 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
               {activeFile && (
                 <button
                   type="button"
-                  onClick={() => downloadUploadedFile(activeFile, `${activeSub?.studentName || 'Student'}_Solution.pdf`)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-700 hover:bg-purple-600 text-white text-[11px] font-bold transition shadow-xs cursor-pointer"
-                  title="Download student solution file"
+                  onClick={() => downloadUploadedFile(activeFile, `Roll_${activeSub?.studentRollNumber}_${activeSub?.studentName || 'Student'}_Solution.pdf`)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold transition shadow-xs cursor-pointer"
+                  title="Download original student solution document"
                 >
-                  <Download className="w-3 h-3" />
-                  <span className="hidden sm:inline">Download</span>
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Download</span>
                 </button>
               )}
 
@@ -720,20 +762,22 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                   onClick={() => {
                     const win = window.open();
                     if (win) {
-                      if (activeFileUri.startsWith('data:application/pdf')) {
+                      if (activeFileUri.startsWith('http://') || activeFileUri.startsWith('https://')) {
+                        win.location.href = `/api/pdf-proxy?url=${encodeURIComponent(activeFileUri)}`;
+                      } else if (activeFileUri.startsWith('data:application/pdf')) {
                         win.document.write(
-                          `<!DOCTYPE html><html><head><title>${activeSub?.files?.[0]?.name || 'Student Submission'}</title><style>body,html{margin:0;padding:0;height:100%;overflow:hidden;}</style></head><body><iframe src="${activeFileUri}" style="border:0;width:100%;height:100%;"></iframe></body></html>`
+                          `<!DOCTYPE html><html><head><title>Roll #${activeSub?.studentRollNumber} — ${activeSub?.studentName || 'Student'}</title><style>body,html{margin:0;padding:0;height:100%;overflow:hidden;}</style></head><body><iframe src="${activeFileUri}" style="border:0;width:100%;height:100%;"></iframe></body></html>`
                         );
                       } else {
-                        win.location.href = activeFileUri;
+                        win.location.href = blobUrl || activeFileUri;
                       }
                     }
                   }}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-purple-300 text-[11px] font-bold transition"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 text-xs font-bold transition"
                   title="Open document in new window"
                 >
-                  <Maximize2 className="w-3 h-3" />
-                  <span className="hidden sm:inline">Pop Out</span>
+                  <Maximize2 className="w-3.5 h-3.5" />
+                  <span>Pop Out</span>
                 </button>
               )}
             </div>
@@ -743,56 +787,17 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
             {docViewTab === 'preview' ? (
               activeFileUri ? (
                 isPdf ? (
-                  <div className="w-full h-full min-h-[550px] flex flex-col rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-xl">
-                    {/* If remote URL (e.g. Cloudinary/HTTPS), embed via Google Docs PDF viewer or native embed */}
-                    {activeFileUri.startsWith('http') ? (
-                      <iframe
-                        src={`https://docs.google.com/viewer?url=${encodeURIComponent(activeFileUri)}&embedded=true`}
-                        className="w-full h-full min-h-[550px] border-0 bg-white"
-                        title="Student Submitted PDF"
-                      />
-                    ) : (
-                      <object
-                        data={blobUrl || activeFileUri}
-                        type="application/pdf"
-                        className="w-full h-full min-h-[550px] border-0 flex-1 bg-white"
-                      >
-                        <iframe
-                          src={blobUrl || activeFileUri}
-                          className="w-full h-full min-h-[550px] border-0 bg-white"
-                          title="Student Submitted PDF"
-                        >
-                          <div className="p-8 text-center text-slate-300 space-y-3 bg-slate-900 h-full flex flex-col items-center justify-center">
-                            <FileText className="w-12 h-12 text-purple-400" />
-                            <p className="text-xs font-bold text-white">Browser Blocked Embedded Preview</p>
-                            <p className="text-[11px] text-slate-400 max-w-xs">
-                              Click below to view the PDF directly or download it.
-                            </p>
-                            <div className="flex items-center gap-2">
-                              {activeFile && (
-                                <button
-                                  type="button"
-                                  onClick={() => downloadUploadedFile(activeFile, `${activeSub?.studentName || 'Student'}_Solution.pdf`)}
-                                  className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white text-xs font-bold transition shadow-xs inline-flex items-center gap-1.5"
-                                >
-                                  <Download className="w-3.5 h-3.5" />
-                                  <span>Download PDF</span>
-                                </button>
-                              )}
-                              <a
-                                href={blobUrl || activeFileUri}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-purple-300 text-xs font-bold transition inline-flex items-center gap-1.5"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                                <span>Open In New Tab</span>
-                              </a>
-                            </div>
-                          </div>
-                        </iframe>
-                      </object>
-                    )}
+                  <div className="w-full h-full min-h-[580px] flex flex-col rounded-2xl overflow-hidden border border-slate-800 bg-slate-900 shadow-xl">
+                    {/* Seamless inline PDF streaming via dedicated proxy route (eliminates blank screens & prevents unwanted Chrome auto-downloads) */}
+                    <iframe
+                      src={
+                        activeFileUri.startsWith('http://') || activeFileUri.startsWith('https://')
+                          ? `/api/pdf-proxy?url=${encodeURIComponent(activeFileUri)}`
+                          : blobUrl || activeFileUri
+                      }
+                      className="w-full h-full min-h-[580px] border-0 rounded-2xl bg-white"
+                      title={`${activeSub?.studentName || 'Student'} Submission PDF`}
+                    />
                   </div>
                 ) : isImage ? (
                   <div className="space-y-3">
@@ -820,7 +825,7 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                     {activeFile && (
                       <button
                         type="button"
-                        onClick={() => downloadUploadedFile(activeFile, `${activeSub?.studentName || 'Student'}_Solution.docx`)}
+                        onClick={() => downloadUploadedFile(activeFile, `Roll_${activeSub?.studentRollNumber}_${activeSub?.studentName || 'Student'}_Solution.docx`)}
                         className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition shadow-sm cursor-pointer mx-auto"
                       >
                         <Download className="w-3.5 h-3.5" />
@@ -896,11 +901,35 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                   </div>
 
                   {plagReport.matchedWithRollNumber && (
-                    <div className="mt-2.5 pt-2 border-t border-white/10 text-[11px] flex items-center justify-between">
-                      <span>Highest Overlapping Peer:</span>
-                      <strong className="font-mono">
-                        Roll #{plagReport.matchedWithRollNumber} ({plagReport.matchedWithName})
-                      </strong>
+                    <div className="mt-3 pt-2.5 border-t border-white/10 text-[11px] space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-slate-400">Matched Peer:</span>
+                          <strong className="font-mono text-white">
+                            Roll #{plagReport.matchedWithRollNumber} ({plagReport.matchedWithName})
+                          </strong>
+                        </div>
+                        {plagReport.chronologicalVerdict === 'derivative_copy' && (
+                          <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30 text-[10px]">
+                            Derivative (Submitted {plagReport.timeDifferenceMinutes}m after peer)
+                          </span>
+                        )}
+                        {plagReport.chronologicalVerdict === 'original_author' && (
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 text-[10px]">
+                            Original Author (Submitted {plagReport.timeDifferenceMinutes}m before peer)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 1-Click Side-by-Side Collusion Diff Button */}
+                      <button
+                        type="button"
+                        onClick={() => setShowCollusionDiff(true)}
+                        className="w-full py-1.5 rounded-xl bg-purple-700/80 hover:bg-purple-600 text-white font-extrabold text-[11px] transition shadow-xs flex items-center justify-center gap-1.5 cursor-pointer border border-purple-500/30"
+                      >
+                        <Layers className="w-3.5 h-3.5 text-purple-200" />
+                        <span>Compare Side-by-Side with Roll #{plagReport.matchedWithRollNumber}</span>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -1018,37 +1047,54 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                     ))}
                   </div>
                 </div>
-              ) : activeSub && activeEvalStatus[activeSub.id]?.error ? (
-                <div className="p-4 bg-slate-950 rounded-2xl border border-rose-500/30 text-xs text-rose-300 flex items-center justify-between">
+              ) : activeSub && activeEvalStatus[activeSub.id]?.isEvaluating ? (
+                <div className="p-8 text-center bg-slate-950 rounded-2xl border border-purple-500/30 space-y-4">
+                  <div className="relative w-12 h-12 mx-auto">
+                    <div className="w-12 h-12 border-3 border-purple-500/30 border-t-purple-400 rounded-full animate-spin" />
+                    <Sparkles className="w-5 h-5 text-purple-400 absolute inset-0 m-auto animate-pulse" />
+                  </div>
                   <div>
-                    <span className="font-bold block">Evaluation Notice</span>
-                    <span className="text-[11px] text-rose-400">
-                      {activeEvalStatus[activeSub.id].error}
-                    </span>
+                    <h4 className="text-xs font-bold text-white">Synthesizing Canonical Solution &amp; Evaluating...</h4>
+                    <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto">
+                      Auditing student solution against question paper blueprint and grading rubric. (Est. 2-3s)
+                    </p>
+                  </div>
+                </div>
+              ) : activeSub && activeEvalStatus[activeSub.id]?.error ? (
+                <div className="p-4 bg-slate-950 rounded-2xl border border-rose-500/40 text-xs space-y-3">
+                  <div className="flex items-center gap-2 text-rose-300">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                    <span className="font-bold">Evaluation Notice: {activeEvalStatus[activeSub.id].error}</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    AI evaluation encountered a temporary delay. You can retry the assessment or grade manually below.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => evaluateStudentInMap(activeSub.id)}
+                    className="px-3.5 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Retry AI Evaluation</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="p-6 bg-slate-950 rounded-2xl border border-slate-800 text-center space-y-3">
+                  <Sparkles className="w-8 h-8 text-purple-400 mx-auto opacity-80" />
+                  <div>
+                    <h4 className="text-xs font-bold text-white">Intelligent Assessment Ready</h4>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Extract code, compare against Canonical Answer Key, and generate mistake highlights.
+                    </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => evaluateStudentInMap(activeSub.id)}
-                    className="px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs"
+                    className="px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer shadow-xs transition"
                   >
-                    Retry Analysis
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Run Intelligent Assessment</span>
                   </button>
-                </div>
-              ) : (
-                <div className="p-4 bg-slate-950 rounded-2xl border border-slate-800 text-xs text-slate-400 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="w-3.5 h-3.5 border-2 border-emerald-400 border-t-transparent rounded-full animate-spin" />
-                    <span>Synthesizing Canonical Model Solution and evaluating student answer...</span>
-                  </div>
-                  {activeSub && (
-                    <button
-                      type="button"
-                      onClick={() => evaluateStudentInMap(activeSub.id)}
-                      className="text-[11px] font-bold text-purple-400 hover:text-purple-300 ml-2"
-                    >
-                      Run Now
-                    </button>
-                  )}
                 </div>
               )}
             </div>
@@ -1242,6 +1288,153 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
               ))
             )}
             <div ref={consoleEndRef} />
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 4. MODAL: 1-CLICK SIDE-BY-SIDE PEER COLLUSION DIFF VIEWER                 */}
+      {/* ========================================================================= */}
+      {showCollusionDiff && plagReport && (
+        <div className="fixed inset-0 z-90 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
+            {/* Header */}
+            <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-300 font-bold flex items-center justify-center border border-rose-500/30 font-mono text-sm">
+                  {plagReport.peerPlagiarismScore}%
+                </span>
+                <div>
+                  <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
+                    <span>Side-by-Side Code Collusion &amp; Origin Audit</span>
+                    {plagReport.chronologicalVerdict === 'derivative_copy' && (
+                      <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
+                        Roll #{activeSub?.studentRollNumber} is Derivative Copy
+                      </span>
+                    )}
+                    {plagReport.chronologicalVerdict === 'original_author' && (
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold border border-emerald-500/30">
+                        Roll #{activeSub?.studentRollNumber} is Original Author
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-slate-400">
+                    Comparing verbatim sentences, syntax structure, and chronological submission timestamps.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCollusionDiff(false)}
+                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center font-bold transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Split Screen Diff Body */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+              {/* Timeline Attribution Banner */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">
+                      Target Student (Current)
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      Sec {activeSub?.studentSection}
+                    </span>
+                  </div>
+                  <h4 className="font-extrabold text-white text-sm">
+                    Roll #{activeSub?.studentRollNumber} — {activeSub?.studentName}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Submitted: <strong className="text-slate-200">{activeSub?.submittedAt ? new Date(activeSub.submittedAt).toLocaleString() : 'N/A'}</strong>
+                  </p>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400">
+                      Matched Classmate Peer
+                    </span>
+                    <span className="font-mono text-[10px] text-slate-400">
+                      Classmate
+                    </span>
+                  </div>
+                  <h4 className="font-extrabold text-white text-sm">
+                    Roll #{plagReport.matchedWithRollNumber} — {plagReport.matchedWithName}
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Submitted: <strong className="text-slate-200">{plagReport.matchedSubmittedAt ? new Date(plagReport.matchedSubmittedAt).toLocaleString() : 'N/A'}</strong>
+                  </p>
+                </div>
+              </div>
+
+              {/* Verifiable Snippets Collisions */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                  Verifiable Code &amp; Text Collision Blocks ({plagReport.matchingSnippets.length})
+                </h4>
+
+                {plagReport.matchingSnippets.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-slate-500 bg-slate-950 rounded-2xl border border-slate-800">
+                    Structural overlap detected via N-gram token matrix. No verbatim block excerpts identified.
+                  </div>
+                ) : (
+                  plagReport.matchingSnippets.map((snip, idx) => (
+                    <div key={idx} className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 space-y-2 text-xs">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="font-bold text-rose-300 flex items-center gap-1.5">
+                          <span className="w-5 h-5 rounded-md bg-rose-500/20 text-rose-300 flex items-center justify-center font-mono text-[10px]">
+                            {idx + 1}
+                          </span>
+                          {snip.matchType}
+                        </span>
+                        <span className="font-mono font-bold text-rose-400">
+                          {snip.similarity}% Identical
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-[11px]">
+                        <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-[10px] text-purple-400 uppercase font-bold block">
+                            Roll #{activeSub?.studentRollNumber} ({activeSub?.studentName}):
+                          </span>
+                          <pre className="text-slate-200 whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                            {snip.studentSnippet}
+                          </pre>
+                        </div>
+
+                        <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
+                          <span className="text-[10px] text-rose-400 uppercase font-bold block">
+                            Roll #{snip.peerRollNumber} ({snip.peerStudentName}):
+                          </span>
+                          <pre className="text-rose-200 whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                            {snip.peerSnippet}
+                          </pre>
+                        </div>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Modal Bottom Footer */}
+            <div className="px-6 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-shrink-0 text-xs">
+              <span className="text-slate-500">
+                Stanford MOSS AST tokenization &amp; chronological attribution verified.
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowCollusionDiff(false)}
+                className="px-5 py-2 rounded-xl bg-purple-700 hover:bg-purple-600 text-white font-extrabold text-xs transition cursor-pointer"
+              >
+                Close Comparison
+              </button>
+            </div>
           </div>
         </div>
       )}

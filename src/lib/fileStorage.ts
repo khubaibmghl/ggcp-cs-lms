@@ -182,7 +182,7 @@ export async function downloadFileUrl(src: string, fileName: string): Promise<vo
     if (src.startsWith('data:')) {
       try {
         const parts = src.split(';base64,');
-        const contentType = parts[0].replace('data:', '') || 'application/pdf';
+        const contentType = parts[0].replace('data:', '') || (safeFileName.endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' : 'application/pdf');
         const raw = window.atob(parts[1]);
         const uInt8Array = new Uint8Array(raw.length);
         for (let i = 0; i < raw.length; ++i) {
@@ -205,41 +205,17 @@ export async function downloadFileUrl(src: string, fileName: string): Promise<vo
     return;
   }
 
-  // 2. Remote URL (e.g. Cloudinary):
-  try {
-    const response = await fetch(src);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const blob = await response.blob();
-    // Enforce matching MIME type if blob is octet-stream
-    const finalBlob = blob.type === 'application/octet-stream' && safeFileName.endsWith('.pdf')
-      ? new Blob([blob], { type: 'application/pdf' })
-      : blob;
-    const blobUrl = URL.createObjectURL(finalBlob);
-
+  // 2. Remote URL (e.g. Cloudinary, Supabase): Route via dedicated download API endpoint
+  // to guarantee strict Content-Disposition, matching MIME type, and safe Windows extension
+  if (src.startsWith('http://') || src.startsWith('https://')) {
+    const downloadEndpoint = `/api/download-submission?url=${encodeURIComponent(src)}&name=${encodeURIComponent(safeFileName)}`;
     const a = document.createElement('a');
-    a.href = blobUrl;
+    a.href = downloadEndpoint;
     a.download = safeFileName;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
     return;
-  } catch (err) {
-    console.warn('[LMS File Vault] Direct blob fetch failed, falling back to direct navigation:', err);
-    let fallbackUrl = src;
-    if (fallbackUrl.includes('cloudinary.com') && fallbackUrl.includes('/upload/')) {
-      const cleanName = encodeURIComponent(safeFileName);
-      fallbackUrl = fallbackUrl.replace('/upload/', `/upload/fl_attachment:${cleanName}/`);
-    }
-    const a = document.createElement('a');
-    a.href = fallbackUrl;
-    a.target = '_blank';
-    a.rel = 'noopener noreferrer';
-    a.download = safeFileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
   }
 }
 

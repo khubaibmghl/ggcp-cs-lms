@@ -533,16 +533,15 @@ Return ONLY a valid JSON object matching this schema:
 }`;
 
         const candidateModels = [
-          'gemini-2.5-flash',
+          'gemini-2.0-flash',
           'gemini-1.5-flash',
-          'gemini-2.5-pro',
         ];
 
         let geminiRes: Response | null = null;
         for (const modelName of candidateModels) {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 12000);
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
             const resp = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey.trim()}`,
               {
@@ -561,7 +560,7 @@ Return ONLY a valid JSON object matching this schema:
               break;
             }
           } catch {
-            // try next model or fallback
+            // try next model or fallback immediately
           }
         }
 

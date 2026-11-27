@@ -91,7 +91,7 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
           setIsServerAiConfigured(d.configured);
         }
       })
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const isGeminiActive = isServerAiConfigured || Boolean(geminiApiKey && geminiApiKey.trim().length > 10);
@@ -164,8 +164,8 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
           files: Array.isArray(row.files) && row.files.length > 0
             ? row.files
             : row.file_url
-            ? [{ name: 'submission_file.pdf', type: 'application/pdf', size: 0, url: row.file_url }]
-            : [],
+              ? [{ name: 'submission_file.pdf', type: 'application/pdf', size: 0, url: row.file_url }]
+              : [],
           submittedAt: row.submitted_at,
           status: row.status || 'submitted',
           score: row.marks != null ? Number(row.marks) : undefined,
@@ -578,9 +578,9 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       }
       const questionFilePayload = questionData
         ? {
-            name: assignment.resourceFileName || 'Question_Paper.pdf',
-            dataUrl: questionData,
-          }
+          name: assignment.resourceFileName || 'Question_Paper.pdf',
+          dataUrl: questionData,
+        }
         : null;
 
       let solutionData = sub.files?.[0]?.dataUrl;
@@ -589,10 +589,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
       }
       const solutionFilePayload = sub.files?.[0]
         ? {
-            name: sub.files[0].name,
-            dataUrl: solutionData,
-            url: sub.files[0].url,
-          }
+          name: sub.files[0].name,
+          dataUrl: solutionData,
+          url: sub.files[0].url,
+        }
         : null;
 
       const res = await fetch('/api/evaluate-submission', {
@@ -699,11 +699,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
               <button
                 key={sec}
                 onClick={() => setSelectedSection(sec)}
-                className={`px-3 py-1 rounded-xl text-xs font-bold transition ${
-                  selectedSection === sec
+                className={`px-3 py-1 rounded-xl text-xs font-bold transition ${selectedSection === sec
                     ? 'bg-purple-700 text-white shadow-xs'
                     : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 {sec === 'All' ? 'All Sections' : `Section ${sec}`}
               </button>
@@ -814,13 +813,12 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
             <button
               type="button"
               onClick={() => setShowAiSettings(!showAiSettings)}
-              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition ${
-                showAiSettings
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-bold border transition ${showAiSettings
                   ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
                   : isGeminiActive
-                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-2xs'
-                  : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
-              }`}
+                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100 shadow-2xs'
+                    : 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                }`}
             >
               <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
               {isGeminiActive ? 'Gemini AI Active' : 'AI Engine'}
@@ -924,11 +922,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                   onClick={() =>
                     setSubmissionSort((prev) => (prev === 'roll-asc' ? 'roll-desc' : 'roll-asc'))
                   }
-                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${
-                    submissionSort.startsWith('roll')
+                  className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${submissionSort.startsWith('roll')
                       ? 'bg-purple-100 text-purple-900 border-purple-300'
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
+                    }`}
                   title="Toggle Roll Number Sort Order"
                 >
                   <ArrowUpDown className="w-3 h-3 text-purple-600" />
@@ -940,11 +937,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                   onClick={() =>
                     setSubmissionSort((prev) => (prev === 'graded-first' ? 'roll-asc' : 'graded-first'))
                   }
-                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${
-                    submissionSort === 'graded-first'
+                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${submissionSort === 'graded-first'
                       ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
+                    }`}
                   title="Show Graded students first"
                 >
                   Graded First
@@ -955,11 +951,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                   onClick={() =>
                     setSubmissionSort((prev) => (prev === 'time-desc' ? 'roll-asc' : 'time-desc'))
                   }
-                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${
-                    submissionSort === 'time-desc'
+                  className={`px-2.5 py-1 rounded-lg border text-[11px] font-bold transition ${submissionSort === 'time-desc'
                       ? 'bg-purple-100 text-purple-900 border-purple-300'
                       : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                  }`}
+                    }`}
                   title="Latest submissions first"
                 >
                   Latest
@@ -1022,16 +1017,31 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                         )}
                       </div>
 
-                      {/* Integrity Badges */}
+                      {/* Document Metadata Telemetry & Integrity Badges */}
                       <div className="flex flex-wrap items-center gap-2 text-[10px] font-bold">
+                        {/* File Name & Format */}
+                        {sub.files?.[0]?.name && (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 flex items-center gap-1 border border-slate-200 font-mono">
+                            <FileText className="w-3 h-3 text-slate-500" />
+                            {sub.files[0].name.length > 25 ? `${sub.files[0].name.slice(0, 22)}...` : sub.files[0].name}
+                          </span>
+                        )}
+
+                        {/* File Size */}
+                        {Boolean(sub.files?.[0]?.size && sub.files[0].size > 0) && (
+                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 font-mono">
+                            {(sub.files[0].size / 1024).toFixed(0)} KB
+                          </span>
+                        )}
+
+                        {/* Plagiarism Badge */}
                         <span
-                          className={`px-2 py-0.5 rounded-md flex items-center gap-1 ${
-                            plag > 35
+                          className={`px-2 py-0.5 rounded-md flex items-center gap-1 ${plag > 35
                               ? 'bg-rose-100 text-rose-800'
                               : plag > 15
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-emerald-100 text-emerald-800'
-                          }`}
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-emerald-100 text-emerald-800'
+                            }`}
                         >
                           <ShieldAlert className="w-3 h-3" />
                           Plagiarism: {plag}%
@@ -1043,13 +1053,6 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                           <Activity className="w-3 h-3" />
                           AI Likelihood: {aiLikelihood}%
                         </span>
-
-                        {isBurst && (
-                          <span className="px-2 py-0.5 rounded-md bg-rose-600 text-white flex items-center gap-1">
-                            <Flame className="w-3 h-3" />
-                            Copy-Paste Burst Detected!
-                          </span>
-                        )}
                       </div>
 
                       {/* === ACTION BUTTONS TOOLBAR AGAINST EACH SUBMISSION === */}
@@ -1280,23 +1283,21 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
               {/* Plagiarism Score Summary Banner */}
               <div
-                className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-                  plagiarismReport.riskLevel === 'critical'
+                className={`p-5 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${plagiarismReport.riskLevel === 'critical'
                     ? 'bg-rose-50 border-rose-200 text-rose-950'
                     : plagiarismReport.riskLevel === 'moderate'
-                    ? 'bg-amber-50 border-amber-200 text-amber-950'
-                    : 'bg-emerald-50 border-emerald-200 text-emerald-950'
-                }`}
+                      ? 'bg-amber-50 border-amber-200 text-amber-950'
+                      : 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                  }`}
               >
                 <div className="flex items-center gap-3.5">
                   <div
-                    className={`w-14 h-14 rounded-2xl flex items-center justify-center font-mono font-black text-xl shadow-sm ${
-                      plagiarismReport.riskLevel === 'critical'
+                    className={`w-14 h-14 rounded-2xl flex items-center justify-center font-mono font-black text-xl shadow-sm ${plagiarismReport.riskLevel === 'critical'
                         ? 'bg-rose-600 text-white'
                         : plagiarismReport.riskLevel === 'moderate'
-                        ? 'bg-amber-500 text-white'
-                        : 'bg-emerald-600 text-white'
-                    }`}
+                          ? 'bg-amber-500 text-white'
+                          : 'bg-emerald-600 text-white'
+                      }`}
                   >
                     {plagiarismReport.peerPlagiarismScore}%
                   </div>
@@ -1305,8 +1306,8 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                       {plagiarismReport.riskLevel === 'critical'
                         ? 'Critical Peer Collusion Detected'
                         : plagiarismReport.riskLevel === 'moderate'
-                        ? 'Moderate Peer Overlap'
-                        : 'Authentic & Original Work'}
+                          ? 'Moderate Peer Overlap'
+                          : 'Authentic & Original Work'}
                     </h4>
                     <p className="text-xs opacity-90 mt-0.5 leading-relaxed">{plagiarismReport.summary}</p>
                   </div>
@@ -1430,11 +1431,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 <div>
                   <div className="flex items-center gap-2 mb-1">
                     <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border ${
-                        evaluationReport.overallScore === 0
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase border ${evaluationReport.overallScore === 0
                           ? 'text-rose-700 bg-rose-50 border-rose-200'
                           : 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                      }`}
+                        }`}
                     >
                       {evaluationReport.overallScore === 0 ? 'Off-Topic / Non-Compliant' : 'Automated Assignment Correction'}
                     </span>
@@ -1459,17 +1459,15 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
 
               {/* Recommended Score Banner */}
               <div
-                className={`text-white rounded-2xl p-5 flex items-center justify-between shadow-lg transition ${
-                  evaluationReport.overallScore === 0
+                className={`text-white rounded-2xl p-5 flex items-center justify-between shadow-lg transition ${evaluationReport.overallScore === 0
                     ? 'bg-gradient-to-r from-rose-700 via-rose-800 to-slate-950 border border-rose-500/30'
                     : 'bg-gradient-to-r from-emerald-600 via-teal-600 to-slate-900'
-                }`}
+                  }`}
               >
                 <div>
                   <span
-                    className={`text-xs font-semibold block uppercase tracking-wider ${
-                      evaluationReport.overallScore === 0 ? 'text-rose-200' : 'text-emerald-200'
-                    }`}
+                    className={`text-xs font-semibold block uppercase tracking-wider ${evaluationReport.overallScore === 0 ? 'text-rose-200' : 'text-emerald-200'
+                      }`}
                   >
                     {evaluationReport.overallScore === 0 ? '⚠️ Off-Topic Evaluation (0 Marks)' : 'Recommended Grade'}
                   </span>
@@ -1477,11 +1475,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                     <span className="text-3xl font-black">{evaluationReport.overallScore}</span>
                     <span className="text-base opacity-80">/ {assignment.totalMarks} Marks</span>
                     <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-bold ml-2 ${
-                        evaluationReport.overallScore === 0
+                      className={`text-xs px-2 py-0.5 rounded-full font-bold ml-2 ${evaluationReport.overallScore === 0
                           ? 'bg-rose-950/70 text-rose-200 border border-rose-400/30'
                           : 'bg-white/20'
-                      }`}
+                        }`}
                     >
                       {evaluationReport.percentage}% • {evaluationReport.status}
                     </span>
@@ -1491,11 +1488,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 <button
                   type="button"
                   onClick={handleApplyEvaluatedGrade}
-                  className={`px-5 py-2.5 rounded-xl font-extrabold text-xs shadow-md transition flex items-center gap-1.5 ${
-                    evaluationReport.overallScore === 0
+                  className={`px-5 py-2.5 rounded-xl font-extrabold text-xs shadow-md transition flex items-center gap-1.5 ${evaluationReport.overallScore === 0
                       ? 'bg-rose-100 hover:bg-white text-rose-950'
                       : 'bg-white text-emerald-800 hover:bg-emerald-50'
-                  }`}
+                    }`}
                 >
                   <CheckCheck className={`w-4 h-4 ${evaluationReport.overallScore === 0 ? 'text-rose-600' : 'text-emerald-600'}`} />
                   Apply Score & Feedback
@@ -1507,11 +1503,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 <button
                   type="button"
                   onClick={() => setEvalTab('scorecard')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    evalTab === 'scorecard'
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${evalTab === 'scorecard'
                       ? 'bg-white text-purple-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   <BookOpen className="w-3.5 h-3.5 text-purple-600" />
                   Scorecard & Critique ({evaluationReport.questionBreakdown?.length || 0})
@@ -1520,11 +1515,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 <button
                   type="button"
                   onClick={() => setEvalTab('modelSolution')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    evalTab === 'modelSolution'
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${evalTab === 'modelSolution'
                       ? 'bg-white text-purple-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   <Sparkles className="w-3.5 h-3.5 text-purple-600" />
                   Model Answer Key
@@ -1533,11 +1527,10 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                 <button
                   type="button"
                   onClick={() => setEvalTab('grounding')}
-                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                    evalTab === 'grounding'
+                  className={`flex-1 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 ${evalTab === 'grounding'
                       ? 'bg-white text-purple-900 shadow-xs'
                       : 'text-slate-600 hover:text-slate-900'
-                  }`}
+                    }`}
                 >
                   <FileText className="w-3.5 h-3.5 text-slate-500" />
                   Raw Grounding Extracts
@@ -1562,13 +1555,12 @@ export const TeacherSubmissionsModal: React.FC<TeacherSubmissionsModalProps> = (
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
                             <span className="font-extrabold text-slate-900">{q.questionNumber}: {q.prompt}</span>
                             <span
-                              className={`font-mono font-bold px-2.5 py-0.5 rounded-md text-[11px] self-start sm:self-auto ${
-                                q.status === 'Full Marks'
+                              className={`font-mono font-bold px-2.5 py-0.5 rounded-md text-[11px] self-start sm:self-auto ${q.status === 'Full Marks'
                                   ? 'bg-emerald-100 text-emerald-800'
                                   : q.status === 'Partial'
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-rose-100 text-rose-800'
-                              }`}
+                                    ? 'bg-amber-100 text-amber-800'
+                                    : 'bg-rose-100 text-rose-800'
+                                }`}
                             >
                               {q.marksAwarded} / {q.maxMarks} Marks ({q.status})
                             </span>

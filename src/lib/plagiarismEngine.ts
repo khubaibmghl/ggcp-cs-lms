@@ -24,6 +24,11 @@ export interface PlagiarismScanResult {
   structuralCodeScore: number;
   matchedWithRollNumber?: number;
   matchedWithName?: string;
+  matchedSubmittedAt?: string;
+  targetSubmittedAt?: string;
+  chronologicalVerdict?: 'original_author' | 'derivative_copy' | 'concurrent';
+  timeDifferenceMinutes?: number;
+  matchedPeerText?: string;
   totalComparisons: number;
   matchingSnippets: PlagiarismMatchSnippet[];
   summary: string;
@@ -116,8 +121,9 @@ function isCodeContent(text: string): boolean {
  */
 export function computePeerPlagiarism(
   targetText: string,
-  peers: { rollNumber: number; name: string; text: string }[],
-  questionText?: string
+  peers: { rollNumber: number; name: string; text: string; submittedAt?: string }[],
+  questionText?: string,
+  targetSubmittedAt?: string
 ): PlagiarismScanResult {
   if (!targetText || targetText.trim().length < 15) {
     return {
@@ -174,6 +180,7 @@ export function computePeerPlagiarism(
   let highestStructuralScore = 0;
   let highestPeerRoll: number | undefined;
   let highestPeerName: string | undefined;
+  let matchedPeerObj: { rollNumber: number; name: string; text: string; submittedAt?: string } | undefined;
   const allMatchingSnippets: PlagiarismMatchSnippet[] = [];
 
   // 3. Pairwise Comparison Against All Peers
@@ -214,6 +221,7 @@ export function computePeerPlagiarism(
       highestStructuralScore = peerStructuralScore;
       highestPeerRoll = peer.rollNumber;
       highestPeerName = peer.name;
+      matchedPeerObj = peer;
     }
 
     // C. Extract Matching Snippets for Visual Diff
@@ -259,16 +267,45 @@ export function computePeerPlagiarism(
     }
   }
 
-  // 4. Determine Risk Level & Qualitative Summary
+  // 4. Chronological Forensic Author vs Derivative Analysis
+  let chronologicalVerdict: 'original_author' | 'derivative_copy' | 'concurrent' | undefined;
+  let timeDifferenceMinutes: number | undefined;
+
+  if (highestScore > 15 && matchedPeerObj?.submittedAt && targetSubmittedAt) {
+    const targetTime = new Date(targetSubmittedAt).getTime();
+    const peerTime = new Date(matchedPeerObj.submittedAt).getTime();
+    if (!isNaN(targetTime) && !isNaN(peerTime)) {
+      const diffMs = targetTime - peerTime;
+      timeDifferenceMinutes = Math.round(Math.abs(diffMs) / (1000 * 60));
+
+      if (diffMs > 3 * 60 * 1000) {
+        // Target submitted > 3 mins later than peer -> derivative copy
+        chronologicalVerdict = 'derivative_copy';
+      } else if (diffMs < -3 * 60 * 1000) {
+        // Target submitted earlier than peer -> original author
+        chronologicalVerdict = 'original_author';
+      } else {
+        chronologicalVerdict = 'concurrent';
+      }
+    }
+  }
+
+  // 5. Determine Risk Level & Qualitative Summary
   let riskLevel: 'clean' | 'moderate' | 'critical' = 'clean';
   let summary = `Original student work. No significant peer overlap detected across ${peers.length} classmate submissions.`;
 
   if (highestScore > 35) {
     riskLevel = 'critical';
+    const originNote = chronologicalVerdict === 'derivative_copy'
+      ? ` [TIMELINE ATTRIBUTION: Student submitted ${timeDifferenceMinutes}m later than Roll #${highestPeerRoll} — likely derivative copy]`
+      : chronologicalVerdict === 'original_author'
+      ? ` [TIMELINE ATTRIBUTION: Student submitted ${timeDifferenceMinutes}m before Roll #${highestPeerRoll} — likely original source]`
+      : '';
+
     if (highestStructuralScore > highestLiteralScore + 15) {
-      summary = `Critical code collusion detected (${highestScore}% structural match) with Roll #${highestPeerRoll} (${highestPeerName}). Identical code logic and syntax structure found despite renamed variables.`;
+      summary = `Critical code collusion detected (${highestScore}% structural match) with Roll #${highestPeerRoll} (${highestPeerName}). Identical code logic and syntax structure found despite renamed variables.${originNote}`;
     } else {
-      summary = `Critical verbatim overlap detected (${highestScore}%) matching peer Roll #${highestPeerRoll} (${highestPeerName}). Immediate faculty review recommended.`;
+      summary = `Critical verbatim overlap detected (${highestScore}%) matching peer Roll #${highestPeerRoll} (${highestPeerName}). Immediate faculty review recommended.${originNote}`;
     }
   } else if (highestScore > 15) {
     riskLevel = 'moderate';
@@ -281,6 +318,11 @@ export function computePeerPlagiarism(
     structuralCodeScore: highestStructuralScore,
     matchedWithRollNumber: highestPeerRoll,
     matchedWithName: highestPeerName,
+    matchedSubmittedAt: matchedPeerObj?.submittedAt,
+    targetSubmittedAt,
+    chronologicalVerdict,
+    timeDifferenceMinutes,
+    matchedPeerText: matchedPeerObj?.text,
     totalComparisons: peers.length,
     matchingSnippets: allMatchingSnippets.slice(0, 6),
     summary,
