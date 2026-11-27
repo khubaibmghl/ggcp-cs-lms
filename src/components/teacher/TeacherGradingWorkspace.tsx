@@ -84,6 +84,8 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
   const [isApplying, setIsApplying] = useState(false);
   const [activeEvalStatus, setActiveEvalStatus] = useState<Record<string, { isEvaluating: boolean; error?: string }>>({});
   const [showCollusionDiff, setShowCollusionDiff] = useState(false);
+  const [collusionViewTab, setCollusionViewTab] = useState<'pdf' | 'diff'>('pdf');
+  const [peerFileUri, setPeerFileUri] = useState<string>('');
 
   const consoleEndRef = useRef<HTMLDivElement>(null);
 
@@ -415,11 +417,12 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       const apiKey = typeof window !== 'undefined' ? localStorage.getItem('ggcp_gemini_api_key') || undefined : undefined;
 
       let questionData = assignment.resourceFileContent;
-      if (!questionData && assignment.resourceFileKey) {
-        questionData = (await getFileBlob(assignment.resourceFileKey)) || '';
+      const asgKey = assignment.resourceFileKey || `asg_paper_${assignment.id}`;
+      if (!questionData) {
+        questionData = (await getFileBlob(asgKey)) || '';
       }
       const questionFilePayload = questionData
-        ? { name: assignment.resourceFileName || 'Question_Paper.pdf', dataUrl: questionData }
+        ? { name: assignment.resourceFileName || 'Question_Paper.docx', dataUrl: questionData }
         : null;
 
       let solutionData = entry.sub.files?.[0]?.dataUrl;
@@ -611,6 +614,27 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
 
   const plagReport = activeEntry?.plagiarismReport;
   const corrReport = activeEntry?.correctionReport;
+
+  const matchedPeerSub = submissions.find((s) => s.studentRollNumber === plagReport?.matchedWithRollNumber);
+  const matchedPeerFile = matchedPeerSub?.files?.[0];
+
+  useEffect(() => {
+    let isMounted = true;
+    if (showCollusionDiff && matchedPeerFile) {
+      if (matchedPeerFile.dataUrl || matchedPeerFile.url) {
+        setPeerFileUri(matchedPeerFile.dataUrl || matchedPeerFile.url || '');
+      } else if (matchedPeerFile.fileKey) {
+        getFileBlob(matchedPeerFile.fileKey).then((blob) => {
+          if (isMounted) setPeerFileUri(blob || '');
+        });
+      } else {
+        setPeerFileUri('');
+      }
+    }
+    return () => {
+      isMounted = false;
+    };
+  }, [showCollusionDiff, matchedPeerFile]);
 
   return (
     <div className="fixed inset-0 z-80 bg-slate-950/90 backdrop-blur-md flex flex-col overflow-hidden animate-in fade-in">
@@ -1296,17 +1320,17 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
       {/* 4. MODAL: 1-CLICK SIDE-BY-SIDE PEER COLLUSION DIFF VIEWER                 */}
       {/* ========================================================================= */}
       {showCollusionDiff && plagReport && (
-        <div className="fixed inset-0 z-90 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-5xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
+        <div className="fixed inset-0 z-90 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-2 sm:p-4 animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-700 rounded-3xl max-w-[97vw] w-full h-[94vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
             {/* Header */}
-            <div className="px-6 py-4 bg-slate-950 border-b border-slate-800 flex items-center justify-between flex-shrink-0">
+            <div className="px-5 py-3.5 bg-slate-950 border-b border-slate-800 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
               <div className="flex items-center gap-3">
-                <span className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-300 font-bold flex items-center justify-center border border-rose-500/30 font-mono text-sm">
+                <span className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-300 font-bold flex items-center justify-center border border-rose-500/30 font-mono text-sm flex-shrink-0">
                   {plagReport.peerPlagiarismScore}%
                 </span>
                 <div>
-                  <h3 className="text-sm font-extrabold text-white flex items-center gap-2">
-                    <span>Side-by-Side Code Collusion &amp; Origin Audit</span>
+                  <h3 className="text-sm font-extrabold text-white flex flex-wrap items-center gap-2">
+                    <span>Side-by-Side Dual Document Comparison Theater</span>
                     {plagReport.chronologicalVerdict === 'derivative_copy' && (
                       <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 text-[10px] font-bold border border-rose-500/30">
                         Roll #{activeSub?.studentRollNumber} is Derivative Copy
@@ -1319,108 +1343,241 @@ export const TeacherGradingWorkspace: React.FC<TeacherGradingWorkspaceProps> = (
                     )}
                   </h3>
                   <p className="text-[11px] text-slate-400">
-                    Comparing verbatim sentences, syntax structure, and chronological submission timestamps.
+                    Compare both students&apos; documents side-by-side on a single screen with verified timestamps.
                   </p>
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => setShowCollusionDiff(false)}
-                className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center font-bold transition cursor-pointer"
-              >
-                ✕
-              </button>
+              {/* View Mode Toggle Switcher */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setCollusionViewTab('pdf')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      collusionViewTab === 'pdf'
+                        ? 'bg-purple-700 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Dual PDF Viewers
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCollusionViewTab('diff')}
+                    className={`px-3 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                      collusionViewTab === 'diff'
+                        ? 'bg-purple-700 text-white shadow-xs'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Verbatim Code Diff
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowCollusionDiff(false)}
+                  className="w-8 h-8 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center font-bold transition cursor-pointer"
+                  title="Close Comparison Theater"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
-            {/* Split Screen Diff Body */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
-              {/* Timeline Attribution Banner */}
-              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">
-                      Target Student (Current)
-                    </span>
-                    <span className="font-mono text-[10px] text-slate-400">
-                      Sec {activeSub?.studentSection}
-                    </span>
-                  </div>
-                  <h4 className="font-extrabold text-white text-sm">
-                    Roll #{activeSub?.studentRollNumber} — {activeSub?.studentName}
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    Submitted: <strong className="text-slate-200">{activeSub?.submittedAt ? new Date(activeSub.submittedAt).toLocaleString() : 'N/A'}</strong>
-                  </p>
-                </div>
-
-                <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400">
-                      Matched Classmate Peer
-                    </span>
-                    <span className="font-mono text-[10px] text-slate-400">
-                      Classmate
-                    </span>
-                  </div>
-                  <h4 className="font-extrabold text-white text-sm">
-                    Roll #{plagReport.matchedWithRollNumber} — {plagReport.matchedWithName}
-                  </h4>
-                  <p className="text-[11px] text-slate-400">
-                    Submitted: <strong className="text-slate-200">{plagReport.matchedSubmittedAt ? new Date(plagReport.matchedSubmittedAt).toLocaleString() : 'N/A'}</strong>
-                  </p>
-                </div>
-              </div>
-
-              {/* Verifiable Snippets Collisions */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
-                  Verifiable Code &amp; Text Collision Blocks ({plagReport.matchingSnippets.length})
-                </h4>
-
-                {plagReport.matchingSnippets.length === 0 ? (
-                  <div className="p-6 text-center text-xs text-slate-500 bg-slate-950 rounded-2xl border border-slate-800">
-                    Structural overlap detected via N-gram token matrix. No verbatim block excerpts identified.
-                  </div>
-                ) : (
-                  plagReport.matchingSnippets.map((snip, idx) => (
-                    <div key={idx} className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 space-y-2 text-xs">
-                      <div className="flex items-center justify-between text-[11px]">
-                        <span className="font-bold text-rose-300 flex items-center gap-1.5">
-                          <span className="w-5 h-5 rounded-md bg-rose-500/20 text-rose-300 flex items-center justify-center font-mono text-[10px]">
-                            {idx + 1}
-                          </span>
-                          {snip.matchType}
-                        </span>
-                        <span className="font-mono font-bold text-rose-400">
-                          {snip.similarity}% Identical
-                        </span>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-[11px]">
-                        <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-[10px] text-purple-400 uppercase font-bold block">
-                            Roll #{activeSub?.studentRollNumber} ({activeSub?.studentName}):
-                          </span>
-                          <pre className="text-slate-200 whitespace-pre-wrap leading-relaxed overflow-x-auto">
-                            {snip.studentSnippet}
-                          </pre>
-                        </div>
-
-                        <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
-                          <span className="text-[10px] text-rose-400 uppercase font-bold block">
-                            Roll #{snip.peerRollNumber} ({snip.peerStudentName}):
-                          </span>
-                          <pre className="text-rose-200 whitespace-pre-wrap leading-relaxed overflow-x-auto">
-                            {snip.peerSnippet}
-                          </pre>
-                        </div>
-                      </div>
+            {/* Body */}
+            {collusionViewTab === 'pdf' ? (
+              /* DUAL 50/50 SPLIT-SCREEN PDF VIEWERS */
+              <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-slate-800 bg-slate-950">
+                {/* LEFT VIEWER: TARGET STUDENT */}
+                <div className="flex flex-col h-full overflow-hidden bg-slate-950">
+                  <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-white">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="w-2.5 h-2.5 rounded-full bg-purple-400" />
+                      <span className="font-extrabold truncate">
+                        Roll #{activeSub?.studentRollNumber} — {activeSub?.studentName}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        (Sec {activeSub?.studentSection})
+                      </span>
                     </div>
-                  ))
-                )}
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] text-slate-400">
+                        {activeSub?.submittedAt ? new Date(activeSub.submittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                      </span>
+                      {activeFile && (
+                        <button
+                          type="button"
+                          onClick={() => downloadUploadedFile(activeFile, `Roll_${activeSub?.studentRollNumber}_${activeSub?.studentName || 'Student'}_Solution.pdf`)}
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-purple-300 text-[10px] font-bold cursor-pointer"
+                          title="Download student file"
+                        >
+                          Download
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-hidden bg-slate-900 p-2">
+                    {activeFileUri ? (
+                      <iframe
+                        src={
+                          activeFileUri.startsWith('http://') || activeFileUri.startsWith('https://')
+                            ? `/api/pdf-proxy?url=${encodeURIComponent(activeFileUri)}`
+                            : blobUrl || activeFileUri
+                        }
+                        className="w-full h-full min-h-[550px] border-0 rounded-xl bg-white shadow-md"
+                        title={`${activeSub?.studentName || 'Student'} Submission PDF`}
+                      />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-500">
+                        No PDF document attached.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* RIGHT VIEWER: MATCHED PEER */}
+                <div className="flex flex-col h-full overflow-hidden bg-slate-950">
+                  <div className="px-4 py-2.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-xs text-white">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-400" />
+                      <span className="font-extrabold truncate text-rose-300">
+                        Roll #{plagReport.matchedWithRollNumber} — {plagReport.matchedWithName}
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        (Matched Peer)
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span className="text-[10px] text-slate-400">
+                        {plagReport.matchedSubmittedAt ? new Date(plagReport.matchedSubmittedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                      </span>
+                      {matchedPeerFile && (
+                        <button
+                          type="button"
+                          onClick={() => downloadUploadedFile(matchedPeerFile, `Roll_${plagReport.matchedWithRollNumber}_${plagReport.matchedWithName || 'Peer'}_Solution.pdf`)}
+                          className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-rose-300 text-[10px] font-bold cursor-pointer"
+                          title="Download peer file"
+                        >
+                          Download
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-hidden bg-slate-900 p-2">
+                    {peerFileUri ? (
+                      <iframe
+                        src={
+                          peerFileUri.startsWith('http://') || peerFileUri.startsWith('https://')
+                            ? `/api/pdf-proxy?url=${encodeURIComponent(peerFileUri)}`
+                            : peerFileUri
+                        }
+                        className="w-full h-full min-h-[550px] border-0 rounded-xl bg-white shadow-md"
+                        title={`${plagReport.matchedWithName || 'Peer'} Submission PDF`}
+                      />
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-500">
+                        Loading peer document...
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* VERBATIM CODE DIFF BODY */
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4">
+                {/* Timeline Attribution Banner */}
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">
+                        Target Student (Current)
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400">
+                        Sec {activeSub?.studentSection}
+                      </span>
+                    </div>
+                    <h4 className="font-extrabold text-white text-sm">
+                      Roll #{activeSub?.studentRollNumber} — {activeSub?.studentName}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Submitted: <strong className="text-slate-200">{activeSub?.submittedAt ? new Date(activeSub.submittedAt).toLocaleString() : 'N/A'}</strong>
+                    </p>
+                  </div>
+
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-rose-400">
+                        Matched Classmate Peer
+                      </span>
+                      <span className="font-mono text-[10px] text-slate-400">
+                        Classmate
+                      </span>
+                    </div>
+                    <h4 className="font-extrabold text-white text-sm">
+                      Roll #{plagReport.matchedWithRollNumber} — {plagReport.matchedWithName}
+                    </h4>
+                    <p className="text-[11px] text-slate-400">
+                      Submitted: <strong className="text-slate-200">{plagReport.matchedSubmittedAt ? new Date(plagReport.matchedSubmittedAt).toLocaleString() : 'N/A'}</strong>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Verifiable Snippets Collisions */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    Verifiable Code &amp; Text Collision Blocks ({plagReport.matchingSnippets.length})
+                  </h4>
+
+                  {plagReport.matchingSnippets.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-slate-500 bg-slate-950 rounded-2xl border border-slate-800">
+                      Structural overlap detected via N-gram token matrix. No verbatim block excerpts identified.
+                    </div>
+                  ) : (
+                    plagReport.matchingSnippets.map((snip, idx) => (
+                      <div key={idx} className="p-4 rounded-2xl bg-slate-950 border border-rose-500/30 space-y-2 text-xs">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="font-bold text-rose-300 flex items-center gap-1.5">
+                            <span className="w-5 h-5 rounded-md bg-rose-500/20 text-rose-300 flex items-center justify-center font-mono text-[10px]">
+                              {idx + 1}
+                            </span>
+                            {snip.matchType}
+                          </span>
+                          <span className="font-mono font-bold text-rose-400">
+                            {snip.similarity}% Identical
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-[11px]">
+                          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
+                            <span className="text-[10px] text-purple-400 uppercase font-bold block">
+                              Roll #{activeSub?.studentRollNumber} ({activeSub?.studentName}):
+                            </span>
+                            <pre className="text-slate-200 whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                              {snip.studentSnippet}
+                            </pre>
+                          </div>
+
+                          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 space-y-1">
+                            <span className="text-[10px] text-rose-400 uppercase font-bold block">
+                              Roll #{snip.peerRollNumber} ({snip.peerStudentName}):
+                            </span>
+                            <pre className="text-rose-200 whitespace-pre-wrap leading-relaxed overflow-x-auto">
+                              {snip.peerSnippet}
+                            </pre>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Modal Bottom Footer */}
             <div className="px-6 py-3 bg-slate-950 border-t border-slate-800 flex items-center justify-between flex-shrink-0 text-xs">

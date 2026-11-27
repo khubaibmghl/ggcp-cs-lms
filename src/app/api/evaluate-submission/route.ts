@@ -441,13 +441,20 @@ export async function POST(req: NextRequest) {
     const subjectCode = assignment?.subjectCode || 'CS Course';
     const studentName = student?.name || 'Student';
 
-    // 1. Extract Question Paper Text
-    let questionText = questionTextOverride || '';
-    if (!questionText && questionFile) {
+    // 1. Extract Question Paper Text (Priority: actual question file -> description -> title)
+    let questionText = '';
+    if (questionFile) {
       questionText = await extractDocumentText(questionFile);
     }
-    if (!questionText && assignment?.description) {
-      questionText = assignment.description;
+    if (!questionText || questionText.trim().length === 0) {
+      if (questionTextOverride && !questionTextOverride.toLowerCase().startsWith('question file:')) {
+        questionText = questionTextOverride;
+      } else if (assignment?.description && !assignment.description.toLowerCase().startsWith('question file:')) {
+        questionText = assignment.description;
+      }
+    }
+    if (!questionText || questionText.trim().length === 0) {
+      questionText = assignment?.title || 'Programming Assignment';
     }
 
     // 2. Extract Student Solution Text
@@ -456,63 +463,54 @@ export async function POST(req: NextRequest) {
       solutionText = await extractDocumentText(solutionFile);
     }
 
-    if (!solutionText || solutionText.trim().length === 0) {
-      // Fallback: Check if student has raw text in description or note
-      const fallbackSample = solutionFile?.name ? `Document: ${solutionFile.name}` : 'Student submission';
-      const fallbackEvaluation = performDeterministicEvaluation(
-        questionText || assignment?.title || 'Assignment',
-        fallbackSample,
-        totalMarks,
-        subjectCode,
-        studentName
-      );
-      return NextResponse.json({
-        success: true,
-        evaluation: {
-          ...fallbackEvaluation,
-          canonicalAnswerKeySummary: 'Document recognized. Detailed text extraction is processing in background.',
-          instructorFeedbackDraft: `Submission received (${solutionFile?.name || 'document'}). Pending teacher review.`,
-        },
-      });
-    }
+    // Clean CamScanner and scanner watermarks from text so they don't mislead the evaluator
+    const cleanedSolutionText = solutionText
+      .replace(/camscanner/gi, '')
+      .replace(/scanned with/gi, '')
+      .replace(/wps office/gi, '')
+      .trim();
 
-    // 3. Optional: Call Google Gemini API if provided by user or environment
+    // 3. Optional: Call Google Gemini Multimodal AI (Native Document Vision)
     const apiKey = userApiKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY || (process.env as any).GENINI_API_KEY;
     if (apiKey && typeof apiKey === 'string' && apiKey.trim().length > 10) {
       try {
         const prompt = `You are a strict, fair, and meticulous Computer Science Professor at Govt. Graduate College Pasrur (GGC Pasrur).
-Execute a 2-stage authentic evaluation:
+Execute an authentic multimodal academic evaluation:
 
-STAGE 1: CANONICAL SOLUTION DISCOVERY & RUBRIC CREATION
-- Carefully analyze the question paper content.
-- For each question, solve it completely to create the authoritative Model Answer Key (with verified code or theoretical explanation).
-- Establish the specific grading rubric items.
+CRITICAL INSTRUCTION FOR SCANS & SCREENSHOTS:
+Students may have submitted screenshots of computer or mobile IDEs (e.g. Programiz, Dev-C++, Turbo C, VS Code) or handwritten code pages.
+Visually inspect every page and image in the attached document!
+Read the actual source code shown in the screenshots or images. DO NOT say "no code detected" if code is visible in the screenshots or scans.
+
+STAGE 1: CANONICAL SOLUTION DISCOVERY
+- Analyze the Question Paper requirements carefully.
+- Identify the expected programming concepts (syntax, logic, loops, condition checks, calculations, I/O).
 
 STAGE 2: DIFFERENTIAL STUDENT EVALUATION
-- Audit the student's submitted document against the discovered Model Answer Key.
-- Quote the exact excerpt from the student submission that addresses the question in "studentEvidenceSnippet".
-- STRICT ACADEMIC INTEGRITY: If the student submitted an off-topic document (such as a faculty course list, timetable, syllabus, or unrelated essay), award 0 MARKS overall and 0 marks for that question. NEVER award courtesy or partial marks for off-topic content or document length!
-- Provide actionable critique explaining marks awarded or deducted.
+- Audit the student's submitted code (visible in screenshots/pages or text) against the question requirements.
+- Quote the exact code statements found in the student submission under "studentEvidenceSnippet".
+- STRICT ACADEMIC INTEGRITY: Only award 0 marks if the submission is genuinely off-topic (e.g., timetable, administrative workload list, unrelated document) with zero relevant code.
+- If code is present and attempts the problem, award appropriate marks based on logic, syntax, and accuracy.
 
 ASSIGNMENT DETAILS:
 Course: ${subjectCode} (${assignment?.title || 'Assignment'})
 Total Marks: ${totalMarks}
 Student: ${studentName} (Roll #${student?.rollNumber || 'N/A'}, Section ${student?.section || 'N/A'})
 
-OFFICIAL QUESTION PAPER CONTENT:
+OFFICIAL QUESTION PAPER CONTENT / BLUEPRINT:
 """
-${questionText || assignment?.title || 'General Computer Science Assignment'}
+${questionText}
 """
 
-STUDENT SUBMITTED SOLUTION CONTENT:
+EXTRACTED TEXT LAYER (IF AVAILABLE):
 """
-${solutionText}
+${cleanedSolutionText || '(No digital text layer; code is embedded in document screenshots/images)'}
 """
 
 Return ONLY a valid JSON object matching this schema:
 {
   "overallScore": number (0 to ${totalMarks}),
-  "canonicalAnswerKeySummary": "overview of the canonical reference solutions discovered",
+  "canonicalAnswerKeySummary": "overview of the canonical reference solutions discovered from question paper",
   "questionBreakdown": [
     {
       "questionNumber": "Q1",
@@ -523,7 +521,7 @@ Return ONLY a valid JSON object matching this schema:
       "feedback": "specific critique explaining marks awarded or deducted",
       "keyConceptsCovered": ["concept1", "concept2"],
       "modelSolutionSnippet": "canonical code or authoritative answer for this question",
-      "studentEvidenceSnippet": "exact excerpt from student submission evaluated (or note if missing)",
+      "studentEvidenceSnippet": "exact excerpt or screenshot code from student submission evaluated",
       "evaluationRubricCriteria": ["rubric item 1", "rubric item 2"]
     }
   ],
@@ -532,23 +530,62 @@ Return ONLY a valid JSON object matching this schema:
   "instructorFeedbackDraft": "comprehensive feedback ready for instructor to give to student"
 }`;
 
+        // Build multimodal parts
+        const parts: any[] = [{ text: prompt }];
+
+        // Attach student submission payload as inlineData so Gemini visually inspects all pages
+        if (solutionFile?.dataUrl && solutionFile.dataUrl.includes('base64,')) {
+          const splitParts = solutionFile.dataUrl.split('base64,');
+          let mime = splitParts[0].replace('data:', '').replace(';base64', '') || 'application/pdf';
+          const b64 = splitParts[1];
+          if (b64 && b64.length < 15000000) {
+            parts.push({
+              inlineData: {
+                mimeType: mime.includes('word') || mime.includes('officedocument') ? 'application/pdf' : mime,
+                data: b64,
+              },
+            });
+          }
+        } else if (solutionFile?.url && (solutionFile.url.startsWith('http://') || solutionFile.url.startsWith('https://'))) {
+          // If remote URL, fetch and attach inline base64 if under 12MB
+          try {
+            const fileRes = await fetch(solutionFile.url);
+            if (fileRes.ok) {
+              const arrayBuf = await fileRes.arrayBuffer();
+              if (arrayBuf.byteLength < 12000000) {
+                const b64 = Buffer.from(arrayBuf).toString('base64');
+                const isPdf = solutionFile.name.toLowerCase().endsWith('.pdf') || fileRes.headers.get('content-type')?.includes('pdf');
+                parts.push({
+                  inlineData: {
+                    mimeType: isPdf ? 'application/pdf' : 'image/jpeg',
+                    data: b64,
+                  },
+                });
+              }
+            }
+          } catch (e) {
+            console.warn('Could not fetch remote solution file for multimodal inspection:', e);
+          }
+        }
+
         const candidateModels = [
-          'gemini-2.0-flash',
-          'gemini-1.5-flash',
+          'gemini-3-flash-preview',
+          'gemini-3.5-flash-lite',
+          'gemini-flash-latest',
         ];
 
         let geminiRes: Response | null = null;
         for (const modelName of candidateModels) {
           try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
             const resp = await fetch(
               `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey.trim()}`,
               {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  contents: [{ parts: [{ text: prompt }] }],
+                  contents: [{ parts }],
                   generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
                 }),
                 signal: controller.signal,
